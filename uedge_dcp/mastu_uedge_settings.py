@@ -2,13 +2,13 @@ from uedge import *
 import os
 
 
-def set_apdirs(uebasedir: str = "/Users/power8/Documents/01_code/01_uedge"):
+def set_apdirs(uebasedir: str = "/Users/power8/Documents/01_code/01_uedge/uedge"):
     """Set directories for hydrogen and impurity data
 
     :param uebasedir: UEDGE source code base directory, defaults to "/Users/power8/Documents/01_code/01_uedge"
     """
-    api.apidir = os.path.join(uebasedir, "uedge/api")
-    aph.aphdir = os.path.join(uebasedir, "uedge/aph")
+    api.apidir = os.path.join(uebasedir, "api")
+    aph.aphdir = os.path.join(uebasedir, "aph")
 
 
 def set_fd_algos():
