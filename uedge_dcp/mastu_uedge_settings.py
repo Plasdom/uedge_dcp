@@ -4,7 +4,7 @@ import os
 from uedge.hdf5 import *
 
 
-def set_apdirs(uebasedir: str = "/Users/power8/Documents/01_code/01_uedge"):
+def set_apdirs(uebasedir: str = "/Users/power8/Documents/01_code/01_uedge/uedge/"):
     """Set directories for hydrogen and impurity data
 
     :param uebasedir: UEDGE source code base directory, defaults to "/Users/power8/Documents/01_code/01_uedge"
