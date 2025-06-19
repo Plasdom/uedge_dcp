@@ -157,7 +157,7 @@ def set_carbon_imps():
     # Impurities
     bbb.isimpon = 6
     com.ngsp = 2
-    com.nzsp[0] = 1  # NUMBER OF IMPURITY SPECIES FOR CARBON
+    com.nzsp[0] = 6  # NUMBER OF IMPURITY SPECIES FOR CARBON
 
     # CARBON
 
