@@ -1,14 +1,16 @@
 from uedge import *
+from uedge.rundt import rundt
 import os
+from uedge.hdf5 import *
 
 
-def set_apdirs(uebasedir: str = "/Users/power8/Documents/01_code/01_uedge/uedge"):
+def set_apdirs(uebasedir: str = "/Users/power8/Documents/01_code/01_uedge"):
     """Set directories for hydrogen and impurity data
 
     :param uebasedir: UEDGE source code base directory, defaults to "/Users/power8/Documents/01_code/01_uedge"
     """
-    api.apidir = os.path.join(uebasedir, "api")
-    aph.aphdir = os.path.join(uebasedir, "aph")
+    api.apidir = os.path.join(uebasedir, "uedge/api")
+    aph.aphdir = os.path.join(uebasedir, "uedge/aph")
 
 
 def set_fd_algos():
@@ -155,7 +157,7 @@ def set_carbon_imps():
     # Impurities
     bbb.isimpon = 6
     com.ngsp = 2
-    com.nzsp[0] = 6  # NUMBER OF IMPURITY SPECIES FOR CARBON
+    com.nzsp[0] = 1  # NUMBER OF IMPURITY SPECIES FOR CARBON
 
     # CARBON
 
@@ -230,117 +232,128 @@ def set_carbon_sputtering(fhaasz: float = 0):
     bbb.fchemygwo = fhaasz
 
 
-def set_perp_transport_coeffs():
+def set_perp_transport_coeffs(spatially_dependent: bool = False):
     """Set the perpendicular transport coefficients to use"""
 
-    # Transport coefficients
-    bbb.kye = 0  # 0.5		#chi_e for radial elec energy diffusion
-    bbb.kyi = 0  # 0.5		#chi_i for radial ion energy diffusion
-    bbb.difni[0] = 0  # .2  		#D for radial hydrogen diffusion        difniv()
-    bbb.difni = 0
-    bbb.travis[0] = 1.0  # eta_a for radial ion momentum diffusion
-    bbb.difutm = 1.0  # toroidal diffusivity for potential
+    if spatially_dependent:
 
-    # Calculating transport coefficients
+        # Transport coefficients
+        bbb.kye = 0  # 0.5		#chi_e for radial elec energy diffusion
+        bbb.kyi = 0  # 0.5		#chi_i for radial ion energy diffusion
+        bbb.difni[0] = 0  # .2  		#D for radial hydrogen diffusion        difniv()
+        bbb.difni = 0
+        bbb.travis[0] = 1.0  # eta_a for radial ion momentum diffusion
+        bbb.difutm = 1.0  # toroidal diffusivity for potential
 
-    runid = 1
-    grd.readgrid("gridue", runid)
+        # Calculating transport coefficients
 
-    k_x = [-0.025, -0.02, -0.0025, 0.0004]
-    k_v = [2.5, 0.75, 0.75, 10.0]
+        runid = 1
+        grd.readgrid("gridue", runid)
 
-    d_x = [-0.025, -0.01, 0.0004, 0.01]
-    d_v = [2, 0.1, 0.1, 0.5]
+        k_x = [-0.025, -0.02, -0.0025, 0.0004]
+        k_v = [2.5, 0.75, 0.75, 10.0]
 
-    k_psi = [0.0] * (com.ny + 1)
-    k_v_psi = [0.0] * (com.ny + 1)
-    d_v_psi = [0.0] * (com.ny + 1)
+        d_x = [-0.025, -0.01, 0.0004, 0.01]
+        d_v = [2, 0.1, 0.1, 0.5]
 
-    psi_sep = com.psi[com.ixpt2[0], com.iysptrx1[0], 4]
+        k_psi = [0.0] * (com.ny + 1)
+        k_v_psi = [0.0] * (com.ny + 1)
+        d_v_psi = [0.0] * (com.ny + 1)
 
-    for ind_j in range(0, com.ny + 1):
-        if com.psi[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j, 4] < psi_sep:
-            bet = (
-                psi_sep - com.psi[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j - 1, 4]
-            ) / (
-                com.psi[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j, 4]
-                - com.psi[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j - 1, 4]
-            )
-            r_sep = com.rm[
-                com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j - 1, 4
-            ] + bet * (
-                com.rm[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j, 4]
-                - com.rm[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j - 1, 4]
-            )
-            break
+        psi_sep = com.psi[com.ixpt2[0], com.iysptrx1[0], 4]
 
-    for ind_j in range(0, com.ny + 1):
-        k_psi[ind_j] = com.psi[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j, 4]
-        dist = com.rm[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j, 0] - r_sep
-
-        for i in range(0, len(k_x)):
-            if k_x[i] > dist:
-                break
-        if k_x[i] <= dist:
-            i = i + 1
-
-        if i > 0:
-            if i > len(k_x) - 1:
-                v = k_v[len(k_x) - 1]
-            else:
-                bet = (dist - k_x[i - 1]) / (k_x[i] - k_x[i - 1])
-                v = k_v[i - 1] + (k_v[i] - k_v[i - 1]) * bet
-        else:
-            v = k_v[0]
-
-        for i in range(0, len(k_x)):
-            if d_x[i] > dist:
-                break
-
-        if d_x[i] <= dist:
-            i = i + 1
-
-        if i > 0:
-            if i > len(d_x) - 1:
-                d = d_v[len(k_x) - 1]
-            else:
-                bet = (dist - d_x[i - 1]) / (d_x[i] - d_x[i - 1])
-                d = d_v[i - 1] + (d_v[i] - d_v[i - 1]) * bet
-        else:
-            d = d_v[0]
-
-        k_v_psi[ind_j] = v
-        d_v_psi[ind_j] = d
-
-    bbb.kyi_use = k_v_psi[com.ny]
-    bbb.dif_use = d_v_psi[com.ny]
-
-    for ind_i in range(com.ixpt1[0] + 1, com.ixpt2[0] + 1):
         for ind_j in range(0, com.ny + 1):
-            psi_ind = com.psi[ind_i, ind_j, 4]
+            if com.psi[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j, 4] < psi_sep:
+                bet = (
+                    psi_sep
+                    - com.psi[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j - 1, 4]
+                ) / (
+                    com.psi[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j, 4]
+                    - com.psi[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j - 1, 4]
+                )
+                r_sep = com.rm[
+                    com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j - 1, 4
+                ] + bet * (
+                    com.rm[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j, 4]
+                    - com.rm[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j - 1, 4]
+                )
+                break
 
-            for i in range(0, com.ny + 1):
-                if k_psi[i] < psi_ind:
+        for ind_j in range(0, com.ny + 1):
+            k_psi[ind_j] = com.psi[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j, 4]
+            dist = com.rm[com.nxleg[0, 0] + com.nxcore[0, 0] + 1, ind_j, 0] - r_sep
+
+            for i in range(0, len(k_x)):
+                if k_x[i] > dist:
                     break
-            if k_psi[i] >= psi_ind:
+            if k_x[i] <= dist:
                 i = i + 1
 
-            if i > 1:
-                if i > com.ny:
-                    v = k_v_psi[com.ny]
-                    d = d_v_psi[com.ny]
+            if i > 0:
+                if i > len(k_x) - 1:
+                    v = k_v[len(k_x) - 1]
                 else:
-                    bet = (psi_ind - k_psi[i - 1]) / (k_psi[i] - k_psi[i - 1])
-                    v = k_v_psi[i - 1] + (k_v_psi[i] - k_v_psi[i - 1]) * bet
-                    d = d_v_psi[i - 1] + (d_v_psi[i] - d_v_psi[i - 1]) * bet
+                    bet = (dist - k_x[i - 1]) / (k_x[i] - k_x[i - 1])
+                    v = k_v[i - 1] + (k_v[i] - k_v[i - 1]) * bet
             else:
-                v = k_v_psi[0]
-                d = d_v_psi[0]
+                v = k_v[0]
 
-            bbb.kyi_use[ind_i, ind_j] = v
-            bbb.dif_use[ind_i, ind_j] = d
+            for i in range(0, len(k_x)):
+                if d_x[i] > dist:
+                    break
 
-    bbb.kye_use = bbb.kyi_use
+            if d_x[i] <= dist:
+                i = i + 1
+
+            if i > 0:
+                if i > len(d_x) - 1:
+                    d = d_v[len(k_x) - 1]
+                else:
+                    bet = (dist - d_x[i - 1]) / (d_x[i] - d_x[i - 1])
+                    d = d_v[i - 1] + (d_v[i] - d_v[i - 1]) * bet
+            else:
+                d = d_v[0]
+
+            k_v_psi[ind_j] = v
+            d_v_psi[ind_j] = d
+
+        bbb.kyi_use = k_v_psi[com.ny]
+        bbb.dif_use = d_v_psi[com.ny]
+
+        for ind_i in range(com.ixpt1[0] + 1, com.ixpt2[0] + 1):
+            for ind_j in range(0, com.ny + 1):
+                psi_ind = com.psi[ind_i, ind_j, 4]
+
+                for i in range(0, com.ny + 1):
+                    if k_psi[i] < psi_ind:
+                        break
+                if k_psi[i] >= psi_ind:
+                    i = i + 1
+
+                if i > 1:
+                    if i > com.ny:
+                        v = k_v_psi[com.ny]
+                        d = d_v_psi[com.ny]
+                    else:
+                        bet = (psi_ind - k_psi[i - 1]) / (k_psi[i] - k_psi[i - 1])
+                        v = k_v_psi[i - 1] + (k_v_psi[i] - k_v_psi[i - 1]) * bet
+                        d = d_v_psi[i - 1] + (d_v_psi[i] - d_v_psi[i - 1]) * bet
+                else:
+                    v = k_v_psi[0]
+                    d = d_v_psi[0]
+
+                bbb.kyi_use[ind_i, ind_j] = v
+                bbb.dif_use[ind_i, ind_j] = d
+
+        bbb.kye_use = bbb.kyi_use
+
+    else:
+        bbb.kye_use = 10
+        bbb.kyi_use = 10
+        bbb.dif_use = 1
+        bbb.difni = 1
+        bbb.travis[0] = 1.0  # eta_a for radial ion momentum diffusion
+        bbb.difutm = 1.0  # toroidal diffusivity for potential
 
 
 def set_div_gas_puff_h():
@@ -419,47 +432,98 @@ def set_initial_conditions():
     bbb.isbcwdt = 1
 
 
-def set_drifts(b0_scale=65.0):
+def set_drifts(b0_scale: float = 65.0, diamagnetic_y2_coeff: float = 0.0):
     """Turn on drifts
 
     :param b0_scale: Scale factor on b0: higher values suppresses drifts. This parameter can steadily reduced to 1 to assist with convergence.
     """
-    bbb.isphion = 1
+    bbb.isphion = 1  # user:turns on (=1) potential eqn.
 
     bbb.newbcl = 1  # Sheath boundary condition (bcee, i) from current equation
-    bbb.newbcr = 1
-    bbb.b0 = b0_scale
+    bbb.newbcr = 1  # Sheath boundary condition (bcee, i) from current equation
+    bbb.b0 = b0_scale  # scale factor for magnetic field (just toroidal or total?)
     # =1 for normal direction B field
-    bbb.rsigpl = 1.0e-8  # anomalous cross field conductivity
+    bbb.rsigpl = 1.0e-8  # anomalous cross field conductivity / ad hoc radial electrical conductivity - global
 
+    bbb.cfjhf = 1.0  # Coef for convective cur (fqp) heat flow
+    bbb.cfjve = 1.0  # Coef for J-contribution to ve.
+    bbb.cfjpy = 0  # Coef for B x gradP terms in div(J) eqn
+    bbb.cfjp2 = 0  # Coef for B x gradP terms in div(J) eqn
+
+    bbb.isfdiax = (
+        1  # switch to turn on diamagnetic drift for sheath potential calculation
+    )
+    bbb.cfqydbo = 1  # factor to includ. fqyd in core current B.C. only
+    bbb.cfydd = diamagnetic_y2_coeff  # Coef for diamagnetic drift in y-direction
+    bbb.cf2dd = diamagnetic_y2_coeff  # Coef for diamagnetic drift in 2-direction
+
+    bbb.cftdd = 1  # Coef for diamagnetic drift in toroidal direction
+    bbb.cfyef = 1.0  # Coef for ExB drift in y-direction
+    bbb.cftef = 1  # Coef for ExB drift in toroidal direction
+    bbb.cf2ef = 1.0  # EXB drift in 2 direction
+    bbb.cfybf = 1.0  # Coef for Grad B drift in y-direction
+    bbb.cf2bf = 1  # Coef for Grad B drift in 2-direction
+    bbb.cfqybf = 1  # Coef for Grad_B current in y-direction
+    bbb.cfq2bf = 1  # Coef for Grad_B current in 2-direction
+
+    bbb.cfqybbo = 0  # factor to includ. fqyb in core current B.C. only / turn off Grad B current on boundary
+    bbb.cfniybbo = 0  # factor to includ. vycb in fniy,feiy at iy=0 only
+    bbb.cfeeydbo = 0  # factor to includ. vycp in feey at iy=0 only
+
+    bbb.cfniydbo = 1  # factor to includ. vycp in fniy,feiy at iy=0 only
+    bbb.cfeeydbo = 1  # factor to includ. vycp in feey at iy=0 only
+    bbb.cfeixdbo = 1  # factor includ v2cdi & BxgradTi in BC at ix=0,nx
+    bbb.cfeexdbo = 1  # factor includ v2cde & BxgradTe in BC at ix=0,nx
+    bbb.cfqym = 1  # Coef for spatial inertial rad current in y-dir.
+
+
+def set_drifts_maxim(b0_scale: float = 10):
+    """Turn on drifts (template taken from https://github.com/LLNL/UEDGE/blob/master/wikidocs/turn_on_drifts.html)
+
+    :param b0_scale: Scale factor on b0: higher values suppresses drifts. This parameter can steadily reduced to 1 to assist with convergence.
+    """
+    bbb.isphion = 1
+    bbb.b0 = b0_scale  # =1 for normal direction B field
+    bbb.rsigpl = 1.0e-8  # anomalous cross field conductivity
     bbb.cfjhf = 1.0  # turn on heat flow from current (fqp)
     bbb.cfjve = 1.0  # makes vex=vix-cfjve*fqx
-    bbb.cfjpy = 0
-    bbb.cfjp2 = 0
-
+    bbb.jhswitch = 0  # Joule Heating switch
+    bbb.newbcl = 1  # Sheath boundary condition (bcee, i) from current equation
+    bbb.newbcr = 1
     bbb.isfdiax = 1  # Factor to turn on diamagnetic contribution to sheath
-    bbb.cfqydbo = 1
-    bbb.cfydd = 0
-    bbb.cf2dd = 0
-
-    bbb.cftdd = 1
     bbb.cfyef = 1.0  # EXB drift in y direction
-    bbb.cftef = 1
     bbb.cf2ef = 1.0  # EXB drift in 2 direction
     bbb.cfybf = 1.0  # turns on vycb - radial Grad B drift
-    bbb.cf2bf = 1
-    bbb.cfqybf = 1
-    bbb.cfq2bf = 1
-
+    bbb.cf2bf = 1.0  # turns on v2cb - perp. Grad B drift (nearly pol)
+    bbb.cfqybf = 1.0  # turns on vycb contrib to radial current
+    bbb.cfq2bf = 1.0  # turns on v2cb contrib to perp("2") current
+    bbb.cfydd = 0.0  # turns off divergence free diamagnetic current
+    bbb.cf2dd = 0.0  # turns off divergence free perp diagmatic current
     bbb.cfqybbo = 0  # turn off Grad B current on boundary
-    bbb.cfniybbo = 0
-    bbb.cfeeydbo = 0
-
-    bbb.cfniydbo = 1
-    bbb.cfeeydbo = 1
-    bbb.cfeixdbo = 1
-    bbb.cfeexdbo = 1
-    bbb.cfqym = 1
+    bbb.cfqydbo = 1  # use full diagmagetic current on boundary to force j_r=0
+    bbb.cfniybbo = 1.0  # use to avoid artificial source at core boundary
+    bbb.cfniydbo = 0.0  # use to avoid artificial source at core boundary
+    bbb.cfeeybbo = 1.0  # ditto
+    bbb.cfeeydbo = 0.0  # ditto
+    bbb.cfeixdbo = 1.0  # turn on BXgrad(T) drift in plate BC
+    bbb.cfeexdbo = 1.0  # turn on diamagnetic drift in plate BC
+    bbb.cftef = 1.0  # turns on v2ce for toroidal velocity
+    bbb.cftdd = 1.0  # turns on v2dd (diamag vel) for toloidal velocity
+    bbb.cfqym = 1.0  # turns on inertial correction to fqy current
+    bbb.iphibcc = 3  # don't set extrapolation BC for Er at iy=0
+    bbb.iphibcwi = 0  # set ey=0 on inner wall if =0
+    # phi(PF)=phintewi*te(ix,0) on PF wall if =1
+    bbb.iphibcwo = 0  # same for outer wall
+    bbb.isutcore = 2  # =1, set dut/dy=0 on iy=0 (if iphibcc=0)
+    # =0, toroidal angular momentum=lzcore on iy=0 (iphibcc=0)
+    bbb.isnewpot = 1.0
+    bbb.rnewpot = 1.0
+    bbb.cfnus_i = 1.0
+    bbb.cfnus_e = 1.0  # include collisionality in drift effects
+    bbb.isybdrywd = 1  # use diffusive flux only on y boundary
+    bbb.lfililut = 200
+    bbb.lenpfac = 150
+    bbb.lenplufac = 150
 
 
 def initial_short_run():
@@ -474,9 +538,29 @@ def initial_short_run():
 def add_carbon():
     """Add carbon impurities to a solution with only hydrogen. Carbon charge states (including neutrals) are initialised with a small density."""
     set_carbon_imps()
-    set_carbon_sputtering(fhaasz=0)
+    set_carbon_sputtering(fhaasz=0.01)
     bbb.allocate()
-    bbb.nis[:, :, com.nhsp] = 1e-3 * bbb.nis[:, :, 0]
-    bbb.nis[:, :, com.nhsp + 1 :] = 1e12
-    bbb.ngs[:, :, 1] = 1e12
+    # bbb.nis[:, :, com.nhsp] = 1e-6 * bbb.nis[:, :, 0]
+    bbb.nis[:, :, com.nhsp] = 1e16
+    bbb.nis[:, :, com.nhsp + 1 :] = 1e16
+    bbb.ngs[:, :, 1] = 1e16
     initial_short_run()
+
+
+def scan_density(n_final: float, N_n: int = 10, save_prefix: str = "n_"):
+    densities = np.linspace(bbb.ncore[0], n_final, N_n + 1)
+    for n in densities[1:]:
+        print(
+            "*********************** TRYING n = {:.2e} *************************".format(
+                n
+            )
+        )
+        bbb.ncore[0] = n
+        bbb.icntnunk = 0
+        bbb.dtreal = 1e-12
+        bbb.exmain()
+        rundt()
+        if bbb.iterm == 1:
+            hdf5_save(save_prefix + "{:.2e}".format(b0) + ".hdf5")
+        else:
+            break

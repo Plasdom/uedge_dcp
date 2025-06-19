@@ -8,10 +8,15 @@ from matplotlib.patches import Polygon
 from copy import deepcopy
 import matplotlib
 from matplotlib.collections import PatchCollection
+from numpy import zeros, sum, transpose, mgrid, nan, array, cross, nan_to_num
+from scipy.interpolate import griddata, bisplrep
+from matplotlib.patches import Polygon
+from copy import deepcopy
+from matplotlib.widgets import Slider
 
 
 def plot_q_plates():
-    """Plot the total heat flux delivered to each target plate"""
+    """Plot the total heat flux delivered to each target plate (snowflake geometry is assumed)"""
     bbb.plateflux()
     q_odata = (bbb.sdrrb + bbb.sdtrb).T
     q_idata = (bbb.sdrlb + bbb.sdtlb).T
@@ -65,6 +70,8 @@ def plotvar(
     subtitle: str = None,
     show: bool = True,
     logscale: bool = False,
+    xlim: tuple = (None, None),
+    ylim: tuple = (None, None),
 ):
     """Plot a variable on the UEDGE mesh. Variable must have same dimensions as grid.
 
@@ -124,19 +131,374 @@ def plotvar(
 
     fig.suptitle(title)
     ax.set_title(subtitle, loc="left")
-    plt.xlabel("R [m]")
-    plt.ylabel("Z [m]")
+    ax.set_xlabel("R [m]")
+    ax.set_ylabel("Z [m]")
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
 
     if grid:
-        plt.grid(True)
+        ax.grid()
 
     if yinv:
-        plt.gca().invert_yaxis()
+        ax.invert_yaxis()
 
     # if (iso):
     #    plt.axes().set_aspect('equal', 'datalim')
     # else:
     #    plt.axes().set_aspect('auto', 'datalim')
 
-    if show:
-        plt.show()
+    # if show:
+    #     plt.show()
+
+
+def animatevar(
+    var: np.ndarray,
+    iso: bool = True,
+    grid: bool = False,
+    label: str = None,
+    vmin: float = None,
+    vmax: float = None,
+    yinv: bool = False,
+    title: str = "UEDGE data",
+    subtitle: str = None,
+    show: bool = True,
+    logscale: bool = False,
+    xlim: tuple = (None, None),
+    ylim: tuple = (None, None),
+):
+    """Animate a variable on the UEDGE mesh. Variable must have same dimensions as grid, plus a timestep dimension (assumed to be the last dimension in the array).
+
+    :param var: A numpy array to plot
+    :param iso: Plot on axes with equal aspect ratio, defaults to True
+    :param grid: Show the grid cells, defaults to False
+    :param label: Colour bar label, defaults to None
+    :param vmin: vmin for colour bar, defaults to None
+    :param vmax: vmax for colour bar, defaults to None
+    :param yinv: Invert y axis, defaults to False
+    :param title: Plot title, defaults to "UEDGE data"
+    :param subtitle: Plot subtitle, defaults to None
+    :param show: Call plt.show(), defaults to True
+    """
+
+    patches = []
+
+    for iy in np.arange(0, com.ny + 2):
+        for ix in np.arange(0, com.nx + 2):
+            rcol = com.rm[ix, iy, [1, 2, 4, 3]]
+            zcol = com.zm[ix, iy, [1, 2, 4, 3]]
+            rcol.shape = (4, 1)
+            zcol.shape = (4, 1)
+            polygon = Polygon(np.column_stack((rcol, zcol)))
+            patches.append(polygon)
+
+    # -is there a better way to cast input data into 2D array?
+    vals = np.zeros((com.nx + 2) * (com.ny + 2))
+
+    for iy in np.arange(0, com.ny + 2):
+        for ix in np.arange(0, com.nx + 2):
+            k = ix + (com.nx + 2) * iy
+            vals[k] = var[ix, iy, 0]
+
+    # Set vmin and vmax disregarding guard cells
+    if not vmax:
+        vmax = np.max(var)
+    if not vmin:
+        vmin = np.min(var)
+
+    if logscale:
+        norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
+    else:
+        norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+    ###p = PatchCollection(patches, cmap=cmap, norm=norm)
+    p = [PatchCollection(patches, norm=norm, cmap="inferno")]
+    p[0].set_array(np.array(vals))
+
+    fig, ax = plt.subplots(1)
+    fig.subplots_adjust(left=0.15, bottom=0.2, right=0.85, top=0.92)
+    ax.add_collection(p[0])
+    ax.autoscale_view()
+    plt.colorbar(p[0], label=label)
+
+    if iso:
+        plt.axis("equal")  # regular aspect-ratio
+
+    fig.suptitle(title)
+    ax.set_title(subtitle, loc="left")
+    ax.set_xlabel("R [m]")
+    ax.set_ylabel("Z [m]")
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+
+    if grid:
+        ax.grid()
+
+    if yinv:
+        ax.invert_yaxis()
+
+    axsurf1 = fig.add_axes([0.15, 0.05, 0.6, 0.03])
+    surf1_slider = Slider(
+        ax=axsurf1,
+        label=r"Timestep",
+        valmin=0,
+        valmax=var.shape[-1] - 1,
+        valinit=0,
+        valstep=1,
+    )
+
+    def update_surf1(val):
+        p[0].remove()
+        for iy in np.arange(0, com.ny + 2):
+            for ix in np.arange(0, com.nx + 2):
+                k = ix + (com.nx + 2) * iy
+                vals[k] = var[ix, iy, int(val)]
+        p[0].set_array(np.array(vals))
+        ax.add_collection(p[0])
+
+        return p
+
+    surf1_slider.on_changed(update_surf1)
+
+    return surf1_slider
+
+
+def getomit(var):
+    """Helper function to handled partial grids w/ omits"""
+    nxomit = 0
+    nyomit = 0
+    if isinstance(var, str):
+        var = var
+    if nyomit > 0:
+        var = var[:, :-nyomit]
+    return var[nxomit:]
+
+
+def streamplotvar(
+    pol: np.ndarray,
+    rad: np.ndarray,
+    background_var: np.ndarray = None,
+    background_var_label: str = None,
+    resolution=(500j, 800j),
+    linewidth="magnitude",
+    broken_streamlines=True,
+    color="red",
+    maxlength=0.4,
+    mask=True,
+    density=2,
+    linewidth_mult=1,
+    xlim=(None, None),
+    ylim=(None, None),
+    logscale=False,
+    **kwargs,
+):
+    """Plot streamlines of a vector variable with poloidal and radial components (pol, rad). Based on the function streamline() in UETools (https://github.com/LLNL/UETOOLS/blob/aaa823222ecc8ae76647aa8bf5299cd9804b61b1/src/uetools/UePlot/Plot.py)
+
+    :param pol: Poloidal component of variable
+    :param rad: Radial component of variable
+    :param resolution: Resolution, defaults to (500j, 800j)
+    :param linewidth: Streamline width (can be a float or "magnitude"), defaults to "magnitude"
+    :param broken_streamlines: Whether to plot broken streamlines or not, defaults to False
+    :param color: Colour of streamlines, defaults to "red"
+    :param maxlength: Max length of streamlines, defaults to 0.4
+    :param mask: Mask, defaults to True
+    :param density: Density of streamlines, defaults to 2
+    :param linewidth_mult: Linewidth multiplier (useful if using linewidth="magnitude"), defaults to 1
+    :param xlim: xlim, defaults to (None, None)
+    :param ylim: ylim, defaults to (None, None)
+    """
+
+    rm = com.rm
+    zm = com.zm
+    nx = com.nx
+    ny = com.ny
+
+    nodes = zeros((nx + 2, ny + 2, 5, 2))
+    nodes[:, :, :, 0] = getomit(rm)
+    nodes[:, :, :, 1] = getomit(zm)
+    nodes = transpose(nodes, (2, 3, 0, 1))
+
+    # TODO: rather than align poloidal/radial in direction of cell,
+    # evaluate face normal locally at cell face?
+    # Find midpoints of y-faces
+    symid = zeros((2, 2, nx + 2, ny + 2))
+    symid[0] = (nodes[2] + nodes[1]) / 2  # Lower face center
+    symid[1] = (nodes[4] + nodes[3]) / 2  # Upper face center
+    # Find midpoints of x-faces
+    sxmid = zeros((2, 2, nx + 2, ny + 2))
+    sxmid[0] = (nodes[3] + nodes[1]) / 2  # Left face center
+    sxmid[1] = (nodes[4] + nodes[2]) / 2  # Right face center
+
+    # Find vectors of east faces
+    eastface = zeros((3, nx + 2, ny + 2))
+    eastface[:-1] = nodes[4] - nodes[2]
+    # Find vectors of north faces
+    northface = zeros((3, nx + 2, ny + 2))
+    northface[:-1] = nodes[4] - nodes[3]
+    # Find normals to faces
+    toroidal = zeros((3, nx + 2, ny + 2))
+    toroidal[-1] = 1
+    eastnormal = cross(eastface, toroidal, axis=0)
+    northnormal = cross(toroidal, northface, axis=0)
+
+    northnormaln = zeros((2, nx + 2, ny + 2))
+    for i in range(2):
+        northnormaln[i] = northnormal[i] / (sum(northnormal**2, axis=0) ** 0.5 + 1e-20)
+    eastnormaln = zeros((2, nx + 2, ny + 2))
+    for i in range(2):
+        eastnormaln[i] = eastnormal[i] / (sum(eastnormal**2, axis=0) ** 0.5 + 1e-20)
+
+    # Create polygons for masking
+    outerx = []
+    outerx = outerx + list(rm[::-1][-com.ixpt1[0] :, 0, 2])
+    outerx = outerx + list(rm[0, :, 1])
+    outerx = outerx + list(rm[:, -1, 3])
+    outerx = outerx + list(rm[:, ::-1][-1, :, 4])
+    outerx = outerx + list(rm[::-1][: nx - com.ixpt2[0], 0, 1])
+    outery = []
+    outery = outery + list(zm[::-1][-com.ixpt1[0] :, 0, 2])
+    outery = outery + list(zm[0, :, 1])
+    outery = outery + list(zm[:, -1, 3])
+    outery = outery + list(zm[:, ::-1][-1, :, 4])
+    outery = outery + list(zm[::-1][: nx - com.ixpt2[0], 0, 1])
+
+    innerx = rm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]
+    innery = zm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]
+
+    outer = Polygon(
+        array([outerx, outery]).transpose(),
+        closed=True,
+        facecolor="white",
+        edgecolor="none",
+    )
+    inner = Polygon(
+        array([innerx, innery]).transpose(),
+        closed=True,
+        facecolor="white",
+        edgecolor="none",
+    )
+    x = pol * eastnormaln[0] + rad * northnormaln[0]
+    y = pol * eastnormaln[1] + rad * northnormaln[1]
+
+    gx, gy = mgrid[
+        rm.min() : rm.max() : resolution[0], zm.min() : zm.max() : resolution[1]
+    ]
+
+    xinterp = griddata(
+        (sxmid[1, 0, 1:-1, 1:-1].ravel(), sxmid[1, 1, 1:-1, 1:-1].ravel()),
+        x[1:-1, 1:-1].ravel(),
+        (gx, gy),
+    )
+    yinterp = griddata(
+        (symid[1, 0, 1:-1, 1:-1].ravel(), symid[1, 1, 1:-1, 1:-1].ravel()),
+        y[1:-1, 1:-1].ravel(),
+        (gx, gy),
+    )
+
+    if mask is True:
+        for i in range(gx.shape[0]):
+            for j in range(gx.shape[1]):
+                p = (gx[i, j], gy[i, j])
+                if (inner.contains_point(p)) or (not outer.contains_point(p)):
+                    xinterp[i, j] = nan
+                    yinterp[i, j] = nan
+
+    if linewidth == "magnitude":
+        linewidth = (xinterp**2 + yinterp**2) ** 0.5
+        linewidth = linewidth.transpose()
+        maxwidth = nan_to_num(deepcopy(linewidth)).max()
+        linewidth /= maxwidth
+
+    linewidth *= linewidth_mult
+
+    fig, ax = plt.subplots(1)
+    ax.set_aspect("equal")
+
+    for iy in np.arange(0, com.ny + 2):
+        for ix in np.arange(0, com.nx + 2):
+            ax.plot(
+                rm[ix, iy, [1, 2, 4, 3, 1]],
+                zm[ix, iy, [1, 2, 4, 3, 1]],
+                color="black",
+                linewidth=0.05,
+                alpha=0.5,
+            )
+
+    if background_var is not None:
+        patches = []
+        for iy in np.arange(0, ny + 2):
+            for ix in np.arange(0, nx + 2):
+                rcol = rm[ix, iy, [1, 2, 4, 3]]
+                zcol = zm[ix, iy, [1, 2, 4, 3]]
+                rcol.shape = (4, 1)
+                zcol.shape = (4, 1)
+                polygon = Polygon(np.column_stack((rcol, zcol)))
+                patches.append(polygon)
+
+        vals = np.zeros((nx + 2) * (ny + 2))
+
+        for iy in np.arange(0, ny + 2):
+            for ix in np.arange(0, nx + 2):
+                k = ix + (nx + 2) * iy
+                vals[k] = background_var[ix, iy]
+
+        # Set vmin and vmax disregarding guard cells
+        vmax = np.max(background_var)
+        vmin = np.min(background_var)
+
+        if logscale:
+            norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
+        else:
+            norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+        ###p = PatchCollection(patches, cmap=cmap, norm=norm)
+        p = PatchCollection(patches, norm=norm, cmap="inferno")
+        p.set_array(np.array(vals))
+
+        ax.add_collection(p)
+        ax.autoscale_view()
+        plt.colorbar(p, label=background_var_label)
+
+    # ax.streamplot(
+    #         gx.transpose(),
+    #         gy.transpose(),
+    #         xinterp.transpose(),
+    #         yinterp.transpose(),
+    #         linewidth=0.2,
+    #         broken_streamlines=False,
+    #         color=color,
+    #         density=density,
+    #         arrowsize=0,
+    #         zorder=9998,
+    #     )
+    ax.streamplot(
+        gx.transpose(),
+        gy.transpose(),
+        xinterp.transpose(),
+        yinterp.transpose(),
+        linewidth=linewidth,
+        broken_streamlines=broken_streamlines,
+        color=color,
+        maxlength=maxlength,
+        density=density,
+        zorder=9999,
+        **kwargs,
+    )
+
+    ax.set_xlabel("R [m]")
+    ax.set_ylabel("Z [m]")
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+
+
+def plotcell(i: list):
+    """Highlight a specific cell
+
+    :param i: A tuple containing cell indices (ix,iy), or a list of such tuples (e.g. [(ix1,iy1),(ix2,iy2),...])
+    """
+    if isinstance(i[0], int):
+        i = [i]
+
+    ch = np.zeros((com.nx + 2, com.ny + 2))
+
+    for cell_idx in i:
+        ch[cell_idx[0], cell_idx[1]] = 1.0 + np.random.random() * 0.1
+
+    plotvar(ch)
