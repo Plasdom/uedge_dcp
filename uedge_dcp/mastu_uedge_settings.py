@@ -348,9 +348,8 @@ def set_perp_transport_coeffs(spatially_dependent: bool = False):
         bbb.kye_use = bbb.kyi_use
 
     else:
-        bbb.kye_use = 10
-        bbb.kyi_use = 10
-        bbb.dif_use = 1
+        bbb.kye = 5  
+        bbb.kyi = 5 
         bbb.difni = 1
         bbb.travis[0] = 1.0  # eta_a for radial ion momentum diffusion
         bbb.difutm = 1.0  # toroidal diffusivity for potential
@@ -564,3 +563,19 @@ def scan_density(n_final: float, N_n: int = 10, save_prefix: str = "n_"):
             hdf5_save(save_prefix + "{:.2e}".format(b0) + ".hdf5")
         else:
             break
+
+def switch_to_diff_neuts():
+    """Switch from fluid to diffusive neutral model"""
+    
+    if bbb.ni.shape[-3] > 1:
+        set_h_gas(fluid_neuts=False)
+        set_carbon_imps()
+        bbb.nis[:,:,1:-1] = bbb.ni[:,:,2:]
+        bbb.ups[:,:,1:-1] = bbb.up[:,:,2:]
+        bbb.ngs[:,:,-1] = bbb.ng[:,:,-1]
+        bbb.allocate()
+        initial_short_run()
+    else:
+        print("Not yet implemented this function for runs without impurities.")
+        pass
+    
