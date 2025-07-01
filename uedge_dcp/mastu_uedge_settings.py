@@ -232,7 +232,53 @@ def set_carbon_sputtering(fhaasz: float = 0):
     bbb.fchemygwo = fhaasz
 
 
-def set_perp_transport_coeffs(spatially_dependent: bool = False):
+def set_perp_transport_coeffs(
+    spatially_dependent: bool = False,
+    kye_core: float = 2.5,
+    kye_sol: float = 10.0,
+    kyi_core: float = 2.5,
+    kyi_sol: float = 10.0,
+    dif_core: float = 2.0,
+    dif_sol: float = 0.5,
+):
+    """Set perpendicular transport coefficients
+
+    :param spatially_dependent: Whetehr to use spatially dependent coefficients (i.e. different in core and SOL), defaults to False
+    :param kye_core: Value for electron thermal diffusivity in core, defaults to 2.5
+    :param kye_sol: Value for electron thermal diffusivity in SOL, defaults to 10.0
+    :param kyi_core: Value for ion thermal diffusivity in core, defaults to 2.5
+    :param kyi_sol: Value for ion thermal diffusivity in SOL, defaults to 10.0
+    :param dif_core: Value for particle diffusivity in core, defaults to 2.0
+    :param dif_sol:  Value for particle diffusivity in SOL, defaults to 0.5
+    """
+    if spatially_dependent:
+        # Transport coefficients
+        bbb.kye = 0  # 0.5		#chi_e for radial elec energy diffusion
+        bbb.kyi = 0  # 0.5		#chi_i for radial ion energy diffusion
+        bbb.difni[0] = 0  # .2  		#D for radial hydrogen diffusion        difniv()
+        bbb.difni = 0
+        bbb.travis[0] = 1.0  # eta_a for radial ion momentum diffusion
+        bbb.difutm = 1.0  # toroidal diffusivity for potential
+
+        # Calculating transport coefficients
+
+        runid = 1
+        grd.readgrid("gridue", runid)
+
+        for isp in range(bbb.dif_use.shape[-1]):
+            bbb.dif_use[:, :, isp] = two_zone_diff_coeffs(dif_core, dif_sol)
+        bbb.kye_use = two_zone_diff_coeffs(kye_core, kyi_sol)
+        bbb.kyi_use = two_zone_diff_coeffs(kyi_core, kye_sol)
+
+    else:
+        bbb.kye = 5
+        bbb.kyi = 5
+        bbb.difni = 1
+        bbb.travis[0] = 1.0  # eta_a for radial ion momentum diffusion
+        bbb.difutm = 1.0  # toroidal diffusivity for potential
+
+
+def set_perp_transport_coeffs_ak(spatially_dependent: bool = False):
     """Set the perpendicular transport coefficients to use"""
 
     if spatially_dependent:
@@ -348,8 +394,8 @@ def set_perp_transport_coeffs(spatially_dependent: bool = False):
         bbb.kye_use = bbb.kyi_use
 
     else:
-        bbb.kye = 5  
-        bbb.kyi = 5 
+        bbb.kye = 5
+        bbb.kyi = 5
         bbb.difni = 1
         bbb.travis[0] = 1.0  # eta_a for radial ion momentum diffusion
         bbb.difutm = 1.0  # toroidal diffusivity for potential
@@ -564,18 +610,36 @@ def scan_density(n_final: float, N_n: int = 10, save_prefix: str = "n_"):
         else:
             break
 
+
 def switch_to_diff_neuts():
     """Switch from fluid to diffusive neutral model"""
-    
+
     if bbb.ni.shape[-3] > 1:
         set_h_gas(fluid_neuts=False)
         set_carbon_imps()
-        bbb.nis[:,:,1:-1] = bbb.ni[:,:,2:]
-        bbb.ups[:,:,1:-1] = bbb.up[:,:,2:]
-        bbb.ngs[:,:,-1] = bbb.ng[:,:,-1]
+        bbb.nis[:, :, 1:-1] = bbb.ni[:, :, 2:]
+        bbb.ups[:, :, 1:-1] = bbb.up[:, :, 2:]
+        bbb.ngs[:, :, -1] = bbb.ng[:, :, -1]
         bbb.allocate()
         initial_short_run()
     else:
         print("Not yet implemented this function for runs without impurities.")
         pass
-    
+
+
+def two_zone_diff_coeffs(core: float = 10, sol: float = 1):
+    """Create diffusion coefficients differently in core/SOL
+
+    :param core: Value to use in core, defaults to 10
+    :param sol: Value to use in SOL, defaults to 1
+    """
+    coeff_use = np.zeros((com.nx + 2, com.ny + 2))
+
+    if com.nxpt == 1:
+        coeff_use[:, :] = sol
+        coeff_use[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, : com.iysptrx1[0] + 1] = core
+    elif com.nxpt == 2:
+        coeff_use[:, :] = sol
+        coeff_use[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, : com.iysptrx1[0] + 1] = core
+
+    return coeff_use

@@ -60,6 +60,8 @@ def plot_q_plates():
 
 def plotvar(
     var: np.ndarray,
+    rm: np.ndarray = None,
+    zm: np.ndarray = None,
     iso: bool = True,
     grid: bool = False,
     label: str = None,
@@ -72,10 +74,13 @@ def plotvar(
     logscale: bool = False,
     xlim: tuple = (None, None),
     ylim: tuple = (None, None),
+    cmap: str = "inferno",
 ):
     """Plot a variable on the UEDGE mesh. Variable must have same dimensions as grid.
 
     :param var: A numpy array to plot
+    :param rm: R coordinates (if None, get from uedge.com)
+    :param zm: Z coordinates (if None, get from uedge.com)
     :param iso: Plot on axes with equal aspect ratio, defaults to True
     :param grid: Show the grid cells, defaults to False
     :param label: Colour bar label, defaults to None
@@ -89,21 +94,30 @@ def plotvar(
 
     patches = []
 
-    for iy in np.arange(0, com.ny + 2):
-        for ix in np.arange(0, com.nx + 2):
-            rcol = com.rm[ix, iy, [1, 2, 4, 3]]
-            zcol = com.zm[ix, iy, [1, 2, 4, 3]]
+    if rm is None:
+        rm = com.rm
+        zm = com.zm
+        nx = com.nx
+        ny = com.ny
+    else:
+        nx = rm.shape[0] - 2
+        ny = rm.shape[1] - 2
+
+    for iy in np.arange(0, ny + 2):
+        for ix in np.arange(0, nx + 2):
+            rcol = rm[ix, iy, [1, 2, 4, 3]]
+            zcol = zm[ix, iy, [1, 2, 4, 3]]
             rcol.shape = (4, 1)
             zcol.shape = (4, 1)
             polygon = Polygon(np.column_stack((rcol, zcol)))
             patches.append(polygon)
 
     # -is there a better way to cast input data into 2D array?
-    vals = np.zeros((com.nx + 2) * (com.ny + 2))
+    vals = np.zeros((nx + 2) * (ny + 2))
 
-    for iy in np.arange(0, com.ny + 2):
-        for ix in np.arange(0, com.nx + 2):
-            k = ix + (com.nx + 2) * iy
+    for iy in np.arange(0, ny + 2):
+        for ix in np.arange(0, nx + 2):
+            k = ix + (nx + 2) * iy
             vals[k] = var[ix, iy]
 
     # Set vmin and vmax disregarding guard cells
@@ -117,7 +131,7 @@ def plotvar(
     else:
         norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     ###p = PatchCollection(patches, cmap=cmap, norm=norm)
-    p = PatchCollection(patches, norm=norm, cmap="inferno")
+    p = PatchCollection(patches, norm=norm, cmap=cmap)
     p.set_array(np.array(vals))
 
     fig, ax = plt.subplots(1)
