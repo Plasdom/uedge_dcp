@@ -2,6 +2,7 @@ import matplotlib.colors
 from uedge import *
 import matplotlib.pyplot as plt
 import uedge_dcp.post_processing as pp
+from uedge_dcp.gridue_manip import Grid
 from numpy import zeros, sum, transpose, mgrid, nan, array, cross, nan_to_num
 from scipy.interpolate import griddata, bisplrep
 from matplotlib.patches import Polygon
@@ -58,11 +59,96 @@ def plot_q_plates():
     fig.tight_layout()
 
 
+def comparemesh(
+    gridfile1: str,
+    gridfile2: str,
+    geom1: str = "snowflake75",
+    geom2: str = "snowflake75",
+):
+    g1 = Grid(geom1, gridfile1)
+    g2 = Grid(geom2, gridfile2)
+
+    fig, ax = plt.subplots(1)
+    ax.set_aspect("equal")
+
+    for iy in np.arange(0, g1.ny + 2):
+        for ix in np.arange(0, g1.nx + 2):
+            ax.plot(
+                g1.r[ix, iy, [1, 2, 4, 3, 1]],
+                g1.z[ix, iy, [1, 2, 4, 3, 1]],
+                color="black",
+                linewidth=0.5,
+            )
+
+    for iy in np.arange(0, g2.ny + 2):
+        for ix in np.arange(0, g2.nx + 2):
+            ax.plot(
+                g2.r[ix, iy, [1, 2, 4, 3, 1]],
+                g2.z[ix, iy, [1, 2, 4, 3, 1]],
+                color="red",
+                linestyle="--",
+                linewidth=0.5,
+            )
+
+    ax.plot([], [], color="black", label="Grid 1")
+    ax.plot([], [], color="red", linestyle="--", label="Grid 2")
+    ax.legend(loc="upper right")
+
+
+def plotmesh(
+    iso=True,
+    zshift=0.0,
+    xlim=None,
+    ylim=None,
+    yinv=False,
+    title="UEDGE grid",
+    subtitle=None,
+    show=True,
+):
+    fig, ax = plt.subplots(1)
+
+    if iso:
+        ax.set_aspect("equal", "datalim")
+    else:
+        ax.set_aspect("auto", "datalim")
+
+    # plt.plot([np.min(com.rm),np.max(com.rm)], [np.min(com.zm),np.max(com.zm)])
+
+    for iy in np.arange(0, com.ny + 2):
+        for ix in np.arange(0, com.nx + 2):
+            ax.plot(
+                com.rm[ix, iy, [1, 2, 4, 3, 1]],
+                com.zm[ix, iy, [1, 2, 4, 3, 1]] + zshift,
+                color="black",
+                linewidth=0.5,
+            )
+
+    ax.set_xlabel("R [m]")
+    ax.set_ylabel("Z [m]")
+    # fig.suptitle('UEDGE grid')
+    # plt.title('UEDGE grid')
+    # ax.set_subtitle(title)
+    ax.set_title(title, loc="left")
+    ax.grid(False)
+
+    if xlim:
+        ax.set_xlim(xlim)
+    if ylim:
+        ax.set_ylim(ylim)
+
+    if yinv:
+        ax.invert_yaxis()
+
+    if show:
+        plt.show()
+
+
 def plotvar(
     var: np.ndarray,
     rm: np.ndarray = None,
     zm: np.ndarray = None,
     iso: bool = True,
+    mesh: bool = False,
     grid: bool = False,
     label: str = None,
     vmin: float = None,
@@ -82,6 +168,7 @@ def plotvar(
     :param rm: R coordinates (if None, get from uedge.com)
     :param zm: Z coordinates (if None, get from uedge.com)
     :param iso: Plot on axes with equal aspect ratio, defaults to True
+    :param mesh: Show the UEDGE mesh lines
     :param grid: Show the grid cells, defaults to False
     :param label: Colour bar label, defaults to None
     :param vmin: vmin for colour bar, defaults to None
@@ -131,7 +218,14 @@ def plotvar(
     else:
         norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     ###p = PatchCollection(patches, cmap=cmap, norm=norm)
-    p = PatchCollection(patches, norm=norm, cmap=cmap)
+    if mesh:
+        lw = 0.1
+    else:
+        lw = 1e-6
+    p = PatchCollection(
+        patches, norm=norm, cmap=cmap, edgecolors="black", linewidths=lw
+    )
+
     p.set_array(np.array(vals))
 
     fig, ax = plt.subplots(1)
@@ -309,7 +403,7 @@ def streamplotvar(
     :param pol: Poloidal component of variable
     :param rad: Radial component of variable
     :param resolution: Resolution, defaults to (500j, 800j)
-    :param linewidth: Streamline width (can be a float or "magnitude"), defaults to "magnitude"
+    :param linewidth: Streamline width (can be a float, "magnitude" or "absolute"), defaults to "magnitude"
     :param broken_streamlines: Whether to plot broken streamlines or not, defaults to False
     :param color: Colour of streamlines, defaults to "red"
     :param maxlength: Max length of streamlines, defaults to 0.4
@@ -420,6 +514,9 @@ def streamplotvar(
         linewidth = linewidth.transpose()
         maxwidth = nan_to_num(deepcopy(linewidth)).max()
         linewidth /= maxwidth
+    elif linewidth == "absolute":
+        linewidth = (xinterp**2 + yinterp**2) ** 0.5
+        linewidth = linewidth.transpose()
 
     linewidth *= linewidth_mult
 

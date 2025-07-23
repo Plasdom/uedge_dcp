@@ -2,6 +2,7 @@ from uedge import *
 from uedge.rundt import rundt
 import os
 from uedge.hdf5 import *
+from scipy.interpolate import interp1d
 
 
 def set_apdirs(uebasedir: str = "/Users/power8/Documents/01_code/01_uedge/uedge"):
@@ -230,6 +231,95 @@ def set_carbon_sputtering(fhaasz: float = 0):
     bbb.fphysyrb = fhaasz
     bbb.fchemygwi = fhaasz
     bbb.fchemygwo = fhaasz
+
+
+def set_perp_transport_coeffs_DM():
+    """Set the perpendicular transport coefficients according to the value shared by David Moulton for MAST-U"""
+    runid = 1
+    grd.readgrid("gridue", runid)
+
+    # Set/reset other transport coeffs before calculating D_y and K_y
+    bbb.kye = 0  # 0.5		#chi_e for radial elec energy diffusion
+    bbb.kyi = 0  # 0.5		#chi_i for radial ion energy diffusion
+    bbb.difni[0] = 0  # .2  		#D for radial hydrogen diffusion        difniv()
+    bbb.difni = 0
+    bbb.travis[0] = 1.0  # eta_a for radial ion momentum diffusion
+    bbb.difutm = 1.0  # toroidal diffusivity for potential
+
+    # Now calculate D_y and K_y
+
+    # Define the functional form of diffusion coeffs vs. distance from separatrix
+    k_x = [-0.025, -0.02, -0.0025, 0.0004]
+    k_v = [2.5, 0.75, 0.75, 10.0]
+    k_interp_func = interp1d(k_x, k_v, fill_value=(k_v[0], k_v[-1]), bounds_error=False)
+
+    d_x = [-0.025, -0.01, 0.0004, 0.01]
+    d_v = [2, 0.1, 0.1, 0.5]
+    d_interp_func = interp1d(d_x, d_v, fill_value=(d_v[0], d_v[-1]), bounds_error=False)
+
+    # Find distance from separatrix for each radial cell
+    r_sepx = com.rm[bbb.ixmp, com.iysptrx1[0], 3]
+    r_omp = 0.5 * (com.rm[bbb.ixmp, :, 3] + com.rm[bbb.ixmp, :, 1])
+    psi_sepx = com.psi[bbb.ixmp, com.iysptrx1[0], 3]
+    psi_omp = 0.5 * (com.psi[bbb.ixmp, :, 3] + com.psi[bbb.ixmp, :, 1])
+    dist_from_sepx = r_omp - r_sepx
+
+    # Interpolate diffusion coeffs onto radial cells
+    k_radial = k_interp_func(dist_from_sepx)
+    d_radial = d_interp_func(dist_from_sepx)
+
+    # Apply to all poloidal cells
+    k_use = np.zeros((com.nx + 2, com.ny + 2))
+    d_use = np.zeros((com.nx + 2, com.ny + 2))
+
+    # Single null case
+    if com.nxpt == 1:
+        # Set the values in the core and SOL
+        for iy in range(com.ny + 2):
+            k_use[:, iy] = k_radial[iy]
+            d_use[:, iy] = d_radial[iy]
+
+        # Set values in the PFR
+        dist_interp_func = interp1d(psi_omp - psi_sepx, r_omp - r_sepx)
+        for ix in range(com.ixpt1[0] + 1):
+            for iy in range(com.iysptrx1[0] + 1):
+                psi_dist = abs(com.psi[ix, iy, 0] - psi_sepx)
+                r_dist = dist_interp_func(psi_dist)
+                k_use[ix, iy] = k_interp_func(r_dist)
+                d_use[ix, iy] = d_interp_func(r_dist)
+        for ix in range(com.ixpt2[0] + 1, com.nx + 2):
+            for iy in range(com.iysptrx1[0] + 1):
+                psi_dist = abs(com.psi[ix, iy, 0] - psi_sepx)
+                r_dist = dist_interp_func(psi_dist)
+                k_use[ix, iy] = k_interp_func(r_dist)
+                d_use[ix, iy] = d_interp_func(r_dist)
+
+    # Snowflake case (need to check this works for configs other than SF75)
+    elif com.nxpt == 2:
+        # Set the values in the core and SOL
+        for iy in range(com.ny + 2):
+            k_use[:, iy] = k_radial[iy]
+            d_use[:, iy] = d_radial[iy]
+
+        # Set values in the PFR
+        for ix in range(com.ixpt1[0] + 1):
+            for iy in range(com.iysptrx1[0] + 1):
+                k_use[ix, iy] = k_v[-1]
+                d_use[ix, iy] = d_v[-1]
+        for ix in range(com.ixpt2[0] + 1, com.ixlb[1] + 1):
+            for iy in range(com.iysptrx1[0] + 1):
+                k_use[ix, iy] = k_v[-1]
+                d_use[ix, iy] = d_v[-1]
+        for ix in range(com.ixlb[1] + 1, com.nx + 2):
+            for iy in range(com.ny + 2):
+                k_use[ix, iy] = k_v[-1]
+                d_use[ix, iy] = d_v[-1]
+
+    # Assign calculated values in UEDGE
+    bbb.kye_use = k_use
+    bbb.kyi_use = k_use
+    for isp in range(bbb.dif_use.shape[-1]):
+        bbb.dif_use[:, :, isp] = d_use
 
 
 def set_perp_transport_coeffs(
@@ -576,8 +666,11 @@ def initial_short_run():
     bbb.restart = 1
     bbb.isbcwdt = 1
     bbb.dtreal = 1e-12
-    bbb.ftol = 1e-6
+    bbb.ftol = 1e-4
+    bbb.icntnunk = 0
+    bbb.itermx = 30
     bbb.exmain()
+    bbb.itermx = 7
 
 
 def add_carbon():
@@ -614,7 +707,7 @@ def scan_density(n_final: float, N_n: int = 10, save_prefix: str = "n_"):
 def switch_to_diff_neuts():
     """Switch from fluid to diffusive neutral model"""
 
-    if bbb.ni.shape[-3] > 1:
+    if bbb.ni.shape[-1] > 2:
         set_h_gas(fluid_neuts=False)
         set_carbon_imps()
         bbb.nis[:, :, 1:-1] = bbb.ni[:, :, 2:]
@@ -623,8 +716,9 @@ def switch_to_diff_neuts():
         bbb.allocate()
         initial_short_run()
     else:
-        print("Not yet implemented this function for runs without impurities.")
-        pass
+        set_h_gas(fluid_neuts=False)
+        bbb.allocate()
+        initial_short_run()
 
 
 def two_zone_diff_coeffs(core: float = 10, sol: float = 1):

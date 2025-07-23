@@ -230,6 +230,7 @@ def interpolate_var_kde(
     nnear: int = 8,
     eps: float = 0.1,
     p: int = 2,
+    squeeze: bool = True,
 ) -> np.ndarray:
     """Interpolate a variable from an old grid and savefile to a new grid
 
@@ -269,7 +270,7 @@ def interpolate_var_kde(
         interpol = interpol.reshape(g2.r_c.shape)
         z_new[:, :, i] = interpol
 
-    if nsp == 1:
+    if nsp == 1 and squeeze:
         z_new = z_new.squeeze()
 
     return z_new
@@ -316,7 +317,12 @@ def get_grid_overlaps(g1: Grid, g2: Grid) -> list:
 
 
 def interpolate_var_overlaps(
-    g1: Grid, g2: Grid, uevar: np.ndarray, overlaps: list = None, squeeze: bool = True
+    g1: Grid,
+    g2: Grid,
+    uevar: np.ndarray,
+    overlaps: list = None,
+    squeeze: bool = True,
+    default_val: float = 0,
 ) -> np.ndarray:
     """Interpolate a variable from an old grid and savefile to a new grid
 
@@ -370,7 +376,11 @@ def interpolate_var_overlaps(
                 iy1 = ol[1]
                 z_new[ix2, iy2] += uevar[ix1][iy1] * ol[-1]
             total_area = np.sum(ol[-1] for ol in ols)
-            z_new[ix2, iy2] = z_new[ix2, iy2] / total_area
+            if total_area > 0:
+                z_new[ix2, iy2] = z_new[ix2, iy2] / total_area
+            else:
+                # No overlap found between current cell and old grid - revert to default value
+                z_new[ix2, iy2] = default_val
 
     if nsp == 1 and squeeze:
         z_new = z_new.squeeze()
@@ -420,7 +430,7 @@ def interpolate_save(
             g1, g2, oldsave.vars["ni"], leafsize, nnear, eps, p
         )
         bbb.ngs = interpolate_var_kde(
-            g1, g2, oldsave.vars["ng"], leafsize, nnear, eps, p
+            g1, g2, oldsave.vars["ng"], leafsize, nnear, eps, p, squeeze=False
         )
         bbb.phis = interpolate_var_kde(
             g1, g2, oldsave.vars["phi"], leafsize, nnear, eps, p
@@ -430,11 +440,21 @@ def interpolate_save(
         )
     elif method == "overlaps":
         overlaps = get_grid_overlaps(g1, g2)
-        bbb.tes = interpolate_var_overlaps(g1, g2, oldsave.vars["te"], overlaps)
-        bbb.tis = interpolate_var_overlaps(g1, g2, oldsave.vars["ti"], overlaps)
-        bbb.nis = interpolate_var_overlaps(g1, g2, oldsave.vars["ni"], overlaps)
-        bbb.ngs = interpolate_var_overlaps(
-            g1, g2, oldsave.vars["ng"], overlaps, squeeze=False
+        bbb.tes = interpolate_var_overlaps(
+            g1, g2, oldsave.vars["te"], overlaps, default_val=10 * bbb.ev
         )
-        bbb.phis = interpolate_var_overlaps(g1, g2, oldsave.vars["phi"], overlaps)
-        bbb.ups = interpolate_var_overlaps(g1, g2, oldsave.vars["up"], overlaps)
+        bbb.tis = interpolate_var_overlaps(
+            g1, g2, oldsave.vars["ti"], overlaps, default_val=10 * bbb.ev
+        )
+        bbb.nis = interpolate_var_overlaps(
+            g1, g2, oldsave.vars["ni"], overlaps, default_val=1e16
+        )
+        bbb.ngs = interpolate_var_overlaps(
+            g1, g2, oldsave.vars["ng"], overlaps, squeeze=False, default_val=1e16
+        )
+        bbb.phis = interpolate_var_overlaps(
+            g1, g2, oldsave.vars["phi"], overlaps, default_val=0.0
+        )
+        bbb.ups = interpolate_var_overlaps(
+            g1, g2, oldsave.vars["up"], overlaps, default_val=0.0
+        )
