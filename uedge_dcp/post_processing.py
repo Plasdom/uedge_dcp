@@ -3,6 +3,11 @@ from uedge import *
 
 
 def get_dr_plate(r):
+    """Get the radial grid spacings for a given set of radial locations
+
+    :param r: Radial coordinates
+    :return: dr
+    """
     dr = np.zeros(len(r))
     for i in range(1, len(r) - 1):
         dr[i] = 0.5 * (r[i + 1] - r[i]) + 0.5 * (r[i] - r[i - 1])
@@ -12,6 +17,10 @@ def get_dr_plate(r):
 
 
 def get_Q_target_proportions():
+    """Get the proportions of heat flux delivered to each strike point
+
+    :return: P1, P2, P3, P4
+    """
     bbb.plateflux()
     q_odata = (bbb.sdrrb + bbb.sdtrb).T
     q_idata = (bbb.sdrlb + bbb.sdtlb).T
@@ -34,3 +43,26 @@ def get_Q_target_proportions():
     P4 = np.sum(q4[1:-1] * dr4[1:-1])
 
     return P1, P2, P3, P4
+
+
+def get_q_drifts():
+    """Get the ExB and grad B convective heat fluxes
+
+    :return: q_ExB, q_gradB
+    """
+    # Compute the heat fluxes
+    q_ExB = bbb.vyce[:, :, 0] * ((bbb.ne * bbb.te) + (bbb.ni[:, :, 0] * bbb.ti))
+    q_gradB = bbb.vycb[:, :, 0] * ((bbb.ne * bbb.te) + (bbb.ni[:, :, 0] * bbb.ti))
+
+    # Set to zero on boundaries
+    q_ExB[com.ixlb[0], :] = np.nan
+    q_ExB[com.ixlb[1], :] = np.nan
+    q_ExB[com.ixrb[0] + 1, :] = np.nan
+    q_ExB[com.ixrb[1] + 1, :] = np.nan
+
+    q_gradB[com.ixlb[0], :] = np.nan
+    q_gradB[com.ixlb[1], :] = np.nan
+    q_gradB[com.ixrb[0] + 1, :] = np.nan
+    q_gradB[com.ixrb[1] + 1, :] = np.nan
+
+    return q_ExB, q_gradB
