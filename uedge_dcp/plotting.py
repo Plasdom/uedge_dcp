@@ -96,6 +96,7 @@ def comparemesh(
 
 
 def plotmesh(
+    gridue_file=None,
     iso=True,
     zshift=0.0,
     xlim=None,
@@ -105,6 +106,19 @@ def plotmesh(
     subtitle=None,
     show=True,
 ):
+
+    if gridue_file is None:
+        rm = com.rm
+        zm = com.zm
+        nx = com.nx
+        ny = com.ny
+    else:
+        grid = Grid(geometry="NA", filename=gridue_file)
+        rm = grid.r
+        zm = grid.z
+        nx = grid.nx
+        ny = grid.ny
+
     fig, ax = plt.subplots(1)
 
     if iso:
@@ -114,11 +128,11 @@ def plotmesh(
 
     # plt.plot([np.min(com.rm),np.max(com.rm)], [np.min(com.zm),np.max(com.zm)])
 
-    for iy in np.arange(0, com.ny + 2):
-        for ix in np.arange(0, com.nx + 2):
+    for iy in np.arange(0, ny + 2):
+        for ix in np.arange(0, nx + 2):
             ax.plot(
-                com.rm[ix, iy, [1, 2, 4, 3, 1]],
-                com.zm[ix, iy, [1, 2, 4, 3, 1]] + zshift,
+                rm[ix, iy, [1, 2, 4, 3, 1]],
+                zm[ix, iy, [1, 2, 4, 3, 1]] + zshift,
                 color="black",
                 linewidth=0.5,
             )
@@ -396,6 +410,7 @@ def streamplotvar(
     xlim=(None, None),
     ylim=(None, None),
     logscale=False,
+    title: str = "",
     **kwargs,
 ):
     """Plot streamlines of a vector variable with poloidal and radial components (pol, rad). Based on the function streamline() in UETools (https://github.com/LLNL/UETOOLS/blob/aaa823222ecc8ae76647aa8bf5299cd9804b61b1/src/uetools/UePlot/Plot.py)
@@ -597,6 +612,8 @@ def streamplotvar(
     ax.set_ylabel("Z [m]")
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
+    if title != "":
+        ax.set_title(title)
 
 
 def plotcell(i: list):
@@ -613,3 +630,88 @@ def plotcell(i: list):
         ch[cell_idx[0], cell_idx[1]] = 1.0 + np.random.random() * 0.1
 
     plotvar(ch)
+
+
+def plotpslice(iy: int):
+    """Highlight a specific poloidal slice
+
+    :param iy: Radial index
+    """
+
+    ch = np.zeros((com.nx + 2, com.ny + 2))
+
+    ch[:, iy] = 1
+
+    plotvar(ch)
+
+
+def plotrslice(ix: list):
+    """Highlight a specific radial slice
+
+    :param iy: Poloidal index
+    """
+
+    ch = np.zeros((com.nx + 2, com.ny + 2))
+
+    ch[ix, :] = 1
+
+    plotvar(ch)
+
+
+def plotrprof(
+    var: np.ndarray,
+    ix: int = -1,
+    use_psin: bool = False,
+    xlim=None,
+    ylim=None,
+    xlog=False,
+    ylog=False,
+    show=True,
+):
+    """Plot the radial profile of a given variable at a given poloidal cell
+
+    :param var: Variable
+    :param ix: _description_, defaults to -1
+    :param use_psin: _description_, defaults to False
+    :param xlim: _description_, defaults to None
+    :param ylim: _description_, defaults to None
+    :param xlog: _description_, defaults to False
+    :param ylog: _description_, defaults to False
+    :param show: _description_, defaults to True
+    """
+
+    fig, ax = plt.subplots(1)
+
+    if ix < 0:
+        ix0 = bbb.ixmp
+    else:
+        ix0 = ix
+
+    # if use_psin:
+    #     psin = (com.psi - com.simagx) / (com.sibdry - com.simagx)
+    #     xcoord = psin[ix0, :, 0]
+    #     xlabel = "Psi_norm"
+    # else:
+    #     xcoord = com.rm[ix0, :, 0] - com.rm[ix0, com.iysptrx, 0]
+    #     # xcoord = com.rm[bbb.ixmp, :, 0] - com.rm[bbb.ixmp, com.iysptrx, 0]
+    #     xlabel = "rho=R-Rsep [m]"
+
+    ax.plot(var[ix0, :], marker="x")
+
+    if xlim:
+        ax.set_xlim(xlim)
+
+    if ylim:
+        ax.set_ylim(ylim)
+
+    if ylog:
+        ax.set_yscale("log")
+
+    if xlog:
+        ax.set_xscale("log")
+
+    ax.set_xlabel("iy")
+    ax.grid(True)
+
+    if show:
+        plt.show()
