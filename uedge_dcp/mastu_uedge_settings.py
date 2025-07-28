@@ -666,7 +666,7 @@ def initial_short_run():
     bbb.restart = 1
     bbb.isbcwdt = 1
     bbb.dtreal = 1e-12
-    bbb.ftol = 1e-4
+    bbb.ftol = 1e-3
     bbb.icntnunk = 0
     bbb.itermx = 30
     bbb.exmain()

@@ -17,27 +17,13 @@ class Grid:
         self.locs = ["CENTER", "SW", "SE", "NW", "NE"]
         self.read_grid(filename)
 
-    def read_grid(self, filename) -> None:
-        """Parse a gridue file
+    def parse_header(self, header_lines):
+        """Parse the gridue header
 
-        :param filename: Full filepath to gridue file
+        :param header_lines: Header lines from gridue file
         """
-        # TODO: Could just use call to  uedge.readgrid() here?
-        # Read in the lines
-        with open(filename) as f:
-            lines = f.readlines()
-        nlines = len(lines)
-
-        # Find the header
-        body_start = 0
-        for i in range(nlines):
-            if lines[i] == "\n":
-                body_start = i + 1
-                break
-        header_lines = lines[: body_start - 1]
-
-        # Parse the header
-        if self.geometry == "dnbot":
+        # if self.geometry == "dnbot":
+        if len(header_lines) <= 2:
             header_data = header_lines[0].strip("\n").split()
             self.nx = int(header_data[0])
             self.ny = int(header_data[1])
@@ -60,6 +46,28 @@ class Grid:
             self.ix_cut3 = int(header_data[4][1])
             self.ix_cut4 = int(header_data[4][3])
             self.ix_plate4 = int(header_data[4][4])
+
+    def read_grid(self, filename) -> None:
+        """Parse a gridue file
+
+        :param filename: Full filepath to gridue file
+        """
+        # TODO: Could just use call to  uedge.readgrid() here?
+        # Read in the lines
+        with open(filename) as f:
+            lines = f.readlines()
+        nlines = len(lines)
+
+        # Find the header
+        body_start = 0
+        for i in range(nlines):
+            if lines[i] == "\n":
+                body_start = i + 1
+                break
+        header_lines = lines[: body_start - 1]
+
+        # Parse the header
+        self.parse_header(header_lines)
 
         # Locate each block of data
         breaks = [body_start]
@@ -447,7 +455,7 @@ def interpolate_save(
             g1, g2, oldsave.vars["ti"], overlaps, default_val=10 * bbb.ev
         )
         bbb.nis = interpolate_var_overlaps(
-            g1, g2, oldsave.vars["ni"], overlaps, default_val=1e16
+            g1, g2, oldsave.vars["ni"], overlaps, squeeze=False, default_val=1e16
         )
         bbb.ngs = interpolate_var_overlaps(
             g1, g2, oldsave.vars["ng"], overlaps, squeeze=False, default_val=1e16
@@ -456,5 +464,5 @@ def interpolate_save(
             g1, g2, oldsave.vars["phi"], overlaps, default_val=0.0
         )
         bbb.ups = interpolate_var_overlaps(
-            g1, g2, oldsave.vars["up"], overlaps, default_val=0.0
+            g1, g2, oldsave.vars["up"], overlaps, squeeze=False, default_val=0.0
         )
