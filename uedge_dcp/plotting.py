@@ -9,10 +9,6 @@ from matplotlib.patches import Polygon
 from copy import deepcopy
 import matplotlib
 from matplotlib.collections import PatchCollection
-from numpy import zeros, sum, transpose, mgrid, nan, array, cross, nan_to_num
-from scipy.interpolate import griddata, bisplrep
-from matplotlib.patches import Polygon
-from copy import deepcopy
 from matplotlib.widgets import Slider
 
 
@@ -383,17 +379,6 @@ def animatevar(
     return surf1_slider
 
 
-def getomit(var):
-    """Helper function to handled partial grids w/ omits"""
-    nxomit = 0
-    nyomit = 0
-    if isinstance(var, str):
-        var = var
-    if nyomit > 0:
-        var = var[:, :-nyomit]
-    return var[nxomit:]
-
-
 def streamplotvar(
     pol: np.ndarray,
     rad: np.ndarray,
@@ -401,12 +386,14 @@ def streamplotvar(
     background_var_label: str = None,
     resolution=(500j, 800j),
     linewidth="magnitude",
+    logscale_linewidth: bool = False,
     broken_streamlines=True,
     color="red",
     maxlength=0.4,
     mask=True,
     density=2,
     linewidth_mult=1,
+    linewidth_legend: bool = False,
     xlim=(None, None),
     ylim=(None, None),
     logscale=False,
@@ -435,8 +422,8 @@ def streamplotvar(
     ny = com.ny
 
     nodes = zeros((nx + 2, ny + 2, 5, 2))
-    nodes[:, :, :, 0] = getomit(rm)
-    nodes[:, :, :, 1] = getomit(zm)
+    nodes[:, :, :, 0] = rm
+    nodes[:, :, :, 1] = zm
     nodes = transpose(nodes, (2, 3, 0, 1))
 
     # TODO: rather than align poloidal/radial in direction of cell,
@@ -450,56 +437,8 @@ def streamplotvar(
     sxmid[0] = (nodes[3] + nodes[1]) / 2  # Left face center
     sxmid[1] = (nodes[4] + nodes[2]) / 2  # Right face center
 
-    # Find vectors of east faces
-    eastface = zeros((3, nx + 2, ny + 2))
-    eastface[:-1] = nodes[4] - nodes[2]
-    # Find vectors of north faces
-    northface = zeros((3, nx + 2, ny + 2))
-    northface[:-1] = nodes[4] - nodes[3]
-    # Find normals to faces
-    toroidal = zeros((3, nx + 2, ny + 2))
-    toroidal[-1] = 1
-    eastnormal = cross(eastface, toroidal, axis=0)
-    northnormal = cross(toroidal, northface, axis=0)
-
-    northnormaln = zeros((2, nx + 2, ny + 2))
-    for i in range(2):
-        northnormaln[i] = northnormal[i] / (sum(northnormal**2, axis=0) ** 0.5 + 1e-20)
-    eastnormaln = zeros((2, nx + 2, ny + 2))
-    for i in range(2):
-        eastnormaln[i] = eastnormal[i] / (sum(eastnormal**2, axis=0) ** 0.5 + 1e-20)
-
-    # Create polygons for masking
-    outerx = []
-    outerx = outerx + list(rm[::-1][-com.ixpt1[0] :, 0, 2])
-    outerx = outerx + list(rm[0, :, 1])
-    outerx = outerx + list(rm[:, -1, 3])
-    outerx = outerx + list(rm[:, ::-1][-1, :, 4])
-    outerx = outerx + list(rm[::-1][: nx - com.ixpt2[0], 0, 1])
-    outery = []
-    outery = outery + list(zm[::-1][-com.ixpt1[0] :, 0, 2])
-    outery = outery + list(zm[0, :, 1])
-    outery = outery + list(zm[:, -1, 3])
-    outery = outery + list(zm[:, ::-1][-1, :, 4])
-    outery = outery + list(zm[::-1][: nx - com.ixpt2[0], 0, 1])
-
-    innerx = rm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]
-    innery = zm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]
-
-    outer = Polygon(
-        array([outerx, outery]).transpose(),
-        closed=True,
-        facecolor="white",
-        edgecolor="none",
-    )
-    inner = Polygon(
-        array([innerx, innery]).transpose(),
-        closed=True,
-        facecolor="white",
-        edgecolor="none",
-    )
-    x = pol * eastnormaln[0] + rad * northnormaln[0]
-    y = pol * eastnormaln[1] + rad * northnormaln[1]
+    # Convert input vector to R-Z coordinates
+    x, y = pp.getVectorRZ(pol, rad)
 
     gx, gy = mgrid[
         rm.min() : rm.max() : resolution[0], zm.min() : zm.max() : resolution[1]
@@ -517,6 +456,64 @@ def streamplotvar(
     )
 
     if mask is True:
+        # Create polygons for masking
+        # TODO: Handle additional mask regions for snowflake configs
+        if com.nxpt == 1:
+            outerx = []
+            outerx += list(rm[::-1][-com.ixpt1[0] :, 0, 2])
+            outerx += list(rm[0, :, 1])
+            outerx += list(rm[:, -1, 3])
+            outerx += list(rm[:, ::-1][-1, :, 4])
+            outerx += list(rm[::-1][: nx - com.ixpt2[0], 0, 1])
+            outery = []
+            outery += list(zm[::-1][-com.ixpt1[0] :, 0, 2])
+            outery += list(zm[0, :, 1])
+            outery += list(zm[:, -1, 3])
+            outery += list(zm[:, ::-1][-1, :, 4])
+            outery += list(zm[::-1][: nx - com.ixpt2[0], 0, 1])
+        elif com.nxpt == 2:
+            outerx = []
+            outerx += list(rm[::-1][-com.ixpt1[0] - 1 :, 0, 2])
+            outerx += list(rm[0, :, 1])
+            outerx += list(rm[: com.ixrb[0] + 1, -1, 2])
+            outerx += list(rm[com.ixrb[0] + 1, :-1, 1][::-1])
+            outerx += list(rm[com.ixpt1[1] + 1 : com.ixrb[0] + 1, 0, 1][::-1])
+            outerx += list(rm[com.ixlb[1] : com.ixpt2[1] + 1, 0, 2][::-1])
+            outerx += list(rm[com.ixlb[1], :, 2])
+            outerx += list(rm[com.ixlb[1] : com.ixpt2[1] + 1, -1, 2])
+            outerx += list(rm[com.ixpt2[1] :, -1, 2])
+            outerx += list(rm[-1, :, 2][::-1])
+            outerx += list(rm[com.ixpt2[1] + 1 : -1, 0, 1][::-1])
+            outerx += list(rm[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, 0, 2])
+            outery = []
+            outery += list(zm[::-1][-com.ixpt1[0] - 1 :, 0, 2])
+            outery += list(zm[0, :, 1])
+            outery += list(zm[: com.ixrb[0] + 1, -1, 2])
+            outery += list(zm[com.ixrb[0] + 1, :-1, 1][::-1])
+            outery += list(zm[com.ixpt1[1] + 1 : com.ixrb[0] + 1, 0, 1][::-1])
+            outery += list(zm[com.ixlb[1] : com.ixpt2[1] + 1, 0, 2][::-1])
+            outery += list(zm[com.ixlb[1], :, 2])
+            outery += list(zm[com.ixlb[1] : com.ixpt2[1] + 1, -1, 2])
+            outery += list(zm[com.ixpt2[1] :, -1, 2])
+            outery += list(zm[-1, :, 2][::-1])
+            outery += list(zm[com.ixpt2[1] + 1 : -1, 0, 1][::-1])
+            outery += list(zm[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, 0, 2])
+
+        innerx = rm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]
+        innery = zm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]
+
+        outer = Polygon(
+            array([outerx, outery]).transpose(),
+            closed=True,
+            facecolor="white",
+            edgecolor="none",
+        )
+        inner = Polygon(
+            array([innerx, innery]).transpose(),
+            closed=True,
+            facecolor="white",
+            edgecolor="none",
+        )
         for i in range(gx.shape[0]):
             for j in range(gx.shape[1]):
                 p = (gx[i, j], gy[i, j])
@@ -525,15 +522,22 @@ def streamplotvar(
                     yinterp[i, j] = nan
 
     if linewidth == "magnitude":
+        lw_setting = linewidth
         linewidth = (xinterp**2 + yinterp**2) ** 0.5
         linewidth = linewidth.transpose()
         maxwidth = nan_to_num(deepcopy(linewidth)).max()
         linewidth /= maxwidth
+        linewidth *= linewidth_mult
+        if logscale_linewidth:
+            linewidth = np.log(linewidth + 1)
     elif linewidth == "absolute":
         linewidth = (xinterp**2 + yinterp**2) ** 0.5
         linewidth = linewidth.transpose()
-
-    linewidth *= linewidth_mult
+        linewidth *= linewidth_mult
+        if logscale_linewidth:
+            linewidth = np.log(linewidth + 1)
+    else:
+        linewidth *= linewidth_mult
 
     fig, ax = plt.subplots(1)
     ax.set_aspect("equal")
@@ -582,18 +586,6 @@ def streamplotvar(
         ax.autoscale_view()
         plt.colorbar(p, label=background_var_label)
 
-    # ax.streamplot(
-    #         gx.transpose(),
-    #         gy.transpose(),
-    #         xinterp.transpose(),
-    #         yinterp.transpose(),
-    #         linewidth=0.2,
-    #         broken_streamlines=False,
-    #         color=color,
-    #         density=density,
-    #         arrowsize=0,
-    #         zorder=9998,
-    #     )
     ax.streamplot(
         gx.transpose(),
         gy.transpose(),
@@ -608,12 +600,37 @@ def streamplotvar(
         **kwargs,
     )
 
+    if linewidth_legend:
+        # TODO: Handle cases where logscale_linewidth not used, different units, etc
+        v_1 = (10.0 - 1) / linewidth_mult
+        v_2 = 10.0 * v_1
+        lw_1 = np.log(v_1 * linewidth_mult + 1)
+        lw_2 = np.log(v_2 * linewidth_mult + 1)
+        ax.plot(
+            [],
+            [],
+            linewidth=lw_1,
+            color="red",
+            label="{:.2f}".format(1e-6 * v_1) + " MWm$^{-2}$",
+        )
+        ax.plot(
+            [],
+            [],
+            linewidth=lw_2,
+            color="red",
+            label="{:.2f}".format(1e-6 * v_2) + " MWm$^{-2}$",
+        )
+        ax.legend(loc="lower left")
+
     ax.set_xlabel("R [m]")
     ax.set_ylabel("Z [m]")
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
     if title != "":
         ax.set_title(title)
+
+    # ax.plot(outerx, outery)
+    # ax.plot(innerx, innery)
 
 
 def plotcell(i: list):

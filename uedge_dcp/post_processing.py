@@ -2,6 +2,85 @@ import numpy as np
 from uedge import *
 
 
+def mask_guard_cells(variable: np.ndarray):
+    """Set all guard cell values to nans
+
+    :param variable: Input variable
+    :return: New array with guard cells set to nan
+    """
+    v = variable.copy()
+    v[0, :] = np.nan
+    v[-1, :] = np.nan
+    v[:, 0] = np.nan
+    v[:, -1] = np.nan
+    if com.nxpt == 2:
+        v[com.ixrb[0] + 1, :] = np.nan
+        v[com.ixlb[1], :] = np.nan
+
+    return v
+
+
+def getomit(var):
+    """Helper function to handled partial grids w/ omits"""
+    nxomit = 0
+    nyomit = 0
+    if isinstance(var, str):
+        var = var
+    if nyomit > 0:
+        var = var[:, :-nyomit]
+    return var[nxomit:]
+
+
+def getThetaHat(ix, iy):
+    """Get the unit vector pointing on the poloidal direction in R-Z coordinates
+
+    :param ix: x index
+    :param iy: y index
+    :return: theta_hat
+    """
+    p1R = com.rm[ix, iy, 1]
+    p1Z = com.zm[ix, iy, 1]
+    p2R = com.rm[ix, iy, 2]
+    p2Z = com.zm[ix, iy, 2]
+    dR = p2R - p1R
+    dZ = p2Z - p1Z
+    mag = (dR**2 + dZ**2) ** 0.5
+    theta_hat = np.array([dR / mag, dZ / mag])
+    return theta_hat
+
+
+def getrHat(ix, iy):
+    """Get the unit vector pointing in the radial direction in R-Z coordinates
+
+    :param ix: x index
+    :param iy: y index
+    :return: r_hat
+    """
+    dR = com.rm[ix, iy, 2] - com.rm[ix, iy, 1]
+    dZ = com.zm[ix, iy, 2] - com.zm[ix, iy, 1]
+    mag = (dR**2 + dZ**2) ** 0.5
+    r_hat = np.array([-dZ / mag, dR / mag])
+    return r_hat
+
+
+def getVectorRZ(vx, vy):
+    """Convert an input vector in UEDGE (x-y) coordinates into R-Z coordinates
+
+    :param vx: x-component of a vector
+    :param vy: y-component of a vector
+    :return: vR, vZ
+    """
+    vec = np.zeros((com.nx + 2, com.ny + 2, 2))
+    for ix in range(1, com.nx + 1):
+        for iy in range(1, com.ny + 1):
+            vec[ix, iy] = vx[ix, iy] * np.array(getThetaHat(ix, iy))
+            vec[ix, iy] += vy[ix, iy] * np.array(getrHat(ix, iy))
+    vR = vec[:, :, 0]
+    vZ = vec[:, :, 1]
+
+    return vR, vZ
+
+
 def get_dr_plate(r):
     """Get the radial grid spacings for a given set of radial locations
 
@@ -51,18 +130,12 @@ def get_q_drifts():
     :return: q_ExB, q_gradB
     """
     # Compute the heat fluxes
-    q_ExB = bbb.vyce[:, :, 0] * ((bbb.ne * bbb.te) + (bbb.ni[:, :, 0] * bbb.ti))
-    q_gradB = bbb.vycb[:, :, 0] * ((bbb.ne * bbb.te) + (bbb.ni[:, :, 0] * bbb.ti))
-
-    # Set to zero on boundaries
-    q_ExB[com.ixlb[0], :] = np.nan
-    q_ExB[com.ixlb[1], :] = np.nan
-    q_ExB[com.ixrb[0] + 1, :] = np.nan
-    q_ExB[com.ixrb[1] + 1, :] = np.nan
-
-    q_gradB[com.ixlb[0], :] = np.nan
-    q_gradB[com.ixlb[1], :] = np.nan
-    q_gradB[com.ixrb[0] + 1, :] = np.nan
-    q_gradB[com.ixrb[1] + 1, :] = np.nan
+    q_ExB = np.zeros((com.nx + 2, com.ny + 2, 2))
+    q_gradB = np.zeros((com.nx + 2, com.ny + 2, 2))
+    p = (bbb.ne * bbb.te) + (bbb.ni[:, :, 0] * bbb.ti)
+    q_ExB[:, :, 0] = -np.sign(bbb.b0) * np.sqrt(1 - com.rr**2) * bbb.v2ce[:, :, 0] * p
+    q_ExB[:, :, 1] = bbb.vyce[:, :, 0] * p
+    q_gradB[:, :, 0] = -np.sign(bbb.b0) * np.sqrt(1 - com.rr**2) * bbb.v2cb[:, :, 0] * p
+    q_gradB[:, :, 1] = bbb.vycb[:, :, 0] * p
 
     return q_ExB, q_gradB
