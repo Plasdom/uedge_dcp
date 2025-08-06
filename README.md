@@ -10,5 +10,6 @@ git clone ssh://git@github.com/plasdom/uedge_dcp
 
 
 ## Install:
-Set up uedge_mvu as a package by running the following command inside the directory containing `setup.py`:
-pip install --editable . --user
+Set up uedge_dcp as a package by running the following command inside the directory containing `setup.py`:
+
+`pip install --editable . --user`

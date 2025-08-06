@@ -125,7 +125,7 @@ def get_Q_target_proportions():
 
 
 def get_q_drifts():
-    """Get the ExB and grad B convective heat fluxes
+    """Get the ExB and grad B convective heat fluxes. Outputs have dimensions [com.nx+2,com.ny+2,2], where the third dimension contains the x and y components of the vector (in UEDGE coordinates)
 
     :return: q_ExB, q_gradB
     """
