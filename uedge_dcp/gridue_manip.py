@@ -1,6 +1,6 @@
 import numpy as np
 import netCDF4
-from uedge import bbb
+from uedge import bbb, com
 import shapely as sh
 
 
@@ -419,6 +419,12 @@ def interpolate_save(
         geometry,
         new_grid,
     )
+
+    # Check the dimensions of the new grid matches the current loaded UEDGE grid
+    if (com.nx != g2.nx) or (com.ny != g2.ny):
+        raise Exception(
+            "The current loaded UEDGE grid must have the same dimensions as 'new_grid'."
+        )
 
     # Read old save file
     oldsave = UESave(old_save)

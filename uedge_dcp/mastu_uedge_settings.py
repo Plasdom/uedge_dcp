@@ -233,7 +233,7 @@ def set_carbon_sputtering(fhaasz: float = 0):
     bbb.fchemygwo = fhaasz
 
 
-def set_perp_transport_coeffs_DM():
+def set_perp_transport_coeffs_DM(ky_div: float = 1.0, dif_div: float = 1.0):
     """Set the perpendicular transport coefficients according to the value shared by David Moulton for MAST-U"""
     runid = 1
     grd.readgrid("gridue", runid)
@@ -262,7 +262,7 @@ def set_perp_transport_coeffs_DM():
     r_omp = 0.5 * (com.rm[bbb.ixmp, :, 3] + com.rm[bbb.ixmp, :, 1])
     psi_sepx = com.psi[bbb.ixmp, com.iysptrx1[0], 3]
     psi_omp = 0.5 * (com.psi[bbb.ixmp, :, 3] + com.psi[bbb.ixmp, :, 1])
-    dist_from_sepx = r_omp - r_sepx
+    dist_from_sepx = r_sepx - r_omp
 
     # Interpolate diffusion coeffs onto radial cells
     k_radial = k_interp_func(dist_from_sepx)
@@ -279,20 +279,27 @@ def set_perp_transport_coeffs_DM():
             k_use[:, iy] = k_radial[iy]
             d_use[:, iy] = d_radial[iy]
 
-        # Set values in the PFR
-        dist_interp_func = interp1d(psi_omp - psi_sepx, r_omp - r_sepx)
-        for ix in range(com.ixpt1[0] + 1):
-            for iy in range(com.iysptrx1[0] + 1):
-                psi_dist = abs(com.psi[ix, iy, 0] - psi_sepx)
-                r_dist = dist_interp_func(psi_dist)
-                k_use[ix, iy] = k_interp_func(r_dist)
-                d_use[ix, iy] = d_interp_func(r_dist)
-        for ix in range(com.ixpt2[0] + 1, com.nx + 2):
-            for iy in range(com.iysptrx1[0] + 1):
-                psi_dist = abs(com.psi[ix, iy, 0] - psi_sepx)
-                r_dist = dist_interp_func(psi_dist)
-                k_use[ix, iy] = k_interp_func(r_dist)
-                d_use[ix, iy] = d_interp_func(r_dist)
+        # # Set values in the PFR
+        # dist_interp_func = interp1d(psi_omp - psi_sepx, r_omp - r_sepx)
+        # for ix in range(com.ixpt1[0] + 1):
+        #     for iy in range(com.iysptrx1[0] + 1):
+        #         psi_dist = abs(com.psi[ix, iy, 0] - psi_sepx)
+        #         r_dist = dist_interp_func(psi_dist)
+        #         k_use[ix, iy] = k_interp_func(r_dist)
+        #         d_use[ix, iy] = d_interp_func(r_dist)
+        # for ix in range(com.ixpt2[0] + 1, com.nx + 2):
+        #     for iy in range(com.iysptrx1[0] + 1):
+        #         psi_dist = abs(com.psi[ix, iy, 0] - psi_sepx)
+        #         r_dist = dist_interp_func(psi_dist)
+        #         k_use[ix, iy] = k_interp_func(r_dist)
+        #         d_use[ix, iy] = d_interp_func(r_dist)
+
+        # Set the values below the X-point
+        for iy in range(com.ny + 2):
+            k_use[: com.ixpt1[0] + 1, iy] = ky_div
+            k_use[com.ixpt2[0] + 1 :, iy] = ky_div
+            d_use[: com.ixpt1[0] + 1, iy] = dif_div
+            d_use[com.ixpt2[0] + 1 :, iy] = dif_div
 
     # Snowflake case (need to check this works for configs other than SF75)
     elif com.nxpt == 2:
@@ -301,19 +308,26 @@ def set_perp_transport_coeffs_DM():
             k_use[:, iy] = k_radial[iy]
             d_use[:, iy] = d_radial[iy]
 
-        # Set values in the PFR
-        for ix in range(com.ixpt1[0] + 1):
-            for iy in range(com.iysptrx1[0] + 1):
-                k_use[ix, iy] = k_v[-1]
-                d_use[ix, iy] = d_v[-1]
-        for ix in range(com.ixpt2[0] + 1, com.ixlb[1] + 1):
-            for iy in range(com.iysptrx1[0] + 1):
-                k_use[ix, iy] = k_v[-1]
-                d_use[ix, iy] = d_v[-1]
-        for ix in range(com.ixlb[1] + 1, com.nx + 2):
-            for iy in range(com.ny + 2):
-                k_use[ix, iy] = k_v[-1]
-                d_use[ix, iy] = d_v[-1]
+        # Set the values below the X-point
+        for iy in range(com.ny + 2):
+            k_use[: com.ixpt1[0] + 1, iy] = ky_div
+            k_use[com.ixpt1[1] - 1 :, iy] = ky_div
+            d_use[: com.ixpt1[0] + 1, iy] = dif_div
+            d_use[com.ixpt1[1] - 1 :, iy] = dif_div
+
+        # # Set values in the PFR
+        # for ix in range(com.ixpt1[0] + 1):
+        #     for iy in range(com.iysptrx1[0] + 1):
+        #         k_use[ix, iy] = k_v[-1]
+        #         d_use[ix, iy] = d_v[-1]
+        # for ix in range(com.ixpt2[0] + 1, com.ixlb[1] + 1):
+        #     for iy in range(com.iysptrx1[0] + 1):
+        #         k_use[ix, iy] = k_v[-1]
+        #         d_use[ix, iy] = d_v[-1]
+        # for ix in range(com.ixlb[1] + 1, com.nx + 2):
+        #     for iy in range(com.ny + 2):
+        #         k_use[ix, iy] = k_v[-1]
+        #         d_use[ix, iy] = d_v[-1]
 
     # Assign calculated values in UEDGE
     bbb.kye_use = k_use
@@ -326,20 +340,27 @@ def set_perp_transport_coeffs(
     spatially_dependent: bool = False,
     kye_core: float = 2.5,
     kye_sol: float = 10.0,
+    kye_div: float = None,
     kyi_core: float = 2.5,
     kyi_sol: float = 10.0,
+    kyi_div: float = None,
     dif_core: float = 2.0,
     dif_sol: float = 0.5,
+    dif_div: float = None,
+    travis: float = 1.0,
 ):
     """Set perpendicular transport coefficients
 
     :param spatially_dependent: Whetehr to use spatially dependent coefficients (i.e. different in core and SOL), defaults to False
     :param kye_core: Value for electron thermal diffusivity in core, defaults to 2.5
     :param kye_sol: Value for electron thermal diffusivity in SOL, defaults to 10.0
+    :param kye_div: Value for particle diffusivity in divertor (below X-point), defaults to be same as kye_sol
     :param kyi_core: Value for ion thermal diffusivity in core, defaults to 2.5
     :param kyi_sol: Value for ion thermal diffusivity in SOL, defaults to 10.0
+    :param kyi_div: Value for particle diffusivity in divertor (below X-point), defaults to be same as kyi_sol
     :param dif_core: Value for particle diffusivity in core, defaults to 2.0
     :param dif_sol:  Value for particle diffusivity in SOL, defaults to 0.5
+    :param dif_div:  Value for particle diffusivity in divertor (below X-point), defaults to be same as dif_sol
     """
     if spatially_dependent:
         # Transport coefficients
@@ -347,7 +368,7 @@ def set_perp_transport_coeffs(
         bbb.kyi = 0  # 0.5		#chi_i for radial ion energy diffusion
         bbb.difni[0] = 0  # .2  		#D for radial hydrogen diffusion        difniv()
         bbb.difni = 0
-        bbb.travis[0] = 1.0  # eta_a for radial ion momentum diffusion
+        bbb.travis[0] = travis  # eta_a for radial ion momentum diffusion
         bbb.difutm = 1.0  # toroidal diffusivity for potential
 
         # Calculating transport coefficients
@@ -355,16 +376,28 @@ def set_perp_transport_coeffs(
         runid = 1
         grd.readgrid("gridue", runid)
 
-        for isp in range(bbb.dif_use.shape[-1]):
-            bbb.dif_use[:, :, isp] = two_zone_diff_coeffs(dif_core, dif_sol)
-        bbb.kye_use = two_zone_diff_coeffs(kye_core, kyi_sol)
-        bbb.kyi_use = two_zone_diff_coeffs(kyi_core, kye_sol)
+        if dif_div is None:
+            for isp in range(bbb.dif_use.shape[-1]):
+                bbb.dif_use[:, :, isp] = two_zone_diff_coeffs(dif_core, dif_sol)
+        else:
+            for isp in range(bbb.dif_use.shape[-1]):
+                bbb.dif_use[:, :, isp] = three_zone_diff_coeffs(
+                    dif_core, dif_sol, dif_div
+                )
+        if kye_div is None:
+            bbb.kye_use = two_zone_diff_coeffs(kye_core, kye_sol)
+        else:
+            bbb.kye_use = three_zone_diff_coeffs(kye_core, kye_sol, dif_div)
+        if kyi_div is None:
+            bbb.kyi_use = two_zone_diff_coeffs(kyi_core, kyi_sol)
+        else:
+            bbb.kyi_use = three_zone_diff_coeffs(kyi_core, kyi_sol, dif_div)
 
     else:
         bbb.kye = 5
         bbb.kyi = 5
         bbb.difni = 1
-        bbb.travis[0] = 1.0  # eta_a for radial ion momentum diffusion
+        bbb.travis[0] = travis  # eta_a for radial ion momentum diffusion
         bbb.difutm = 1.0  # toroidal diffusivity for potential
 
 
@@ -676,7 +709,7 @@ def initial_short_run():
 def add_carbon():
     """Add carbon impurities to a solution with only hydrogen. Carbon charge states (including neutrals) are initialised with a small density."""
     set_carbon_imps()
-    set_carbon_sputtering(fhaasz=0.01)
+    set_carbon_sputtering(fhaasz=0.0001)
     bbb.allocate()
     # bbb.nis[:, :, com.nhsp] = 1e-6 * bbb.nis[:, :, 0]
     bbb.nis[:, :, com.nhsp] = 1e16
@@ -735,5 +768,35 @@ def two_zone_diff_coeffs(core: float = 10, sol: float = 1):
     elif com.nxpt == 2:
         coeff_use[:, :] = sol
         coeff_use[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, : com.iysptrx1[0] + 1] = core
+
+    return coeff_use
+
+
+def three_zone_diff_coeffs(core: float = 10, sol: float = 1, div: float = 1):
+    """Create diffusion coefficients differently in core/SOL/divertor
+
+    :param core: Value to use in core, defaults to 10
+    :param sol: Value to use in SOL, defaults to 1
+    :param div: Value to use in divertor (i.e. below X-point), defaults to 1
+    """
+    coeff_use = np.zeros((com.nx + 2, com.ny + 2))
+
+    if com.nxpt == 1:
+        coeff_use[:, :] = sol
+        coeff_use[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, : com.iysptrx1[0] + 1] = core
+
+        # Set the values below the X-point
+        for iy in range(com.ny + 2):
+            coeff_use[: com.ixpt1[0] + 1, iy] = div
+            coeff_use[com.ixpt2[0] + 1 :, iy] = div
+
+    elif com.nxpt == 2:
+        coeff_use[:, :] = sol
+        coeff_use[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, : com.iysptrx1[0] + 1] = core
+
+        # Set the values below the X-point
+        for iy in range(com.ny + 2):
+            coeff_use[: com.ixpt1[0] + 1, iy] = div
+            coeff_use[com.ixpt1[1] - 1 :, iy] = div
 
     return coeff_use

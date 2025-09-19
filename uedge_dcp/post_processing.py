@@ -1,5 +1,8 @@
 import numpy as np
 from uedge import *
+import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
+from scipy.interpolate import interp1d
 
 
 def mask_guard_cells(variable: np.ndarray):
@@ -139,3 +142,120 @@ def get_q_drifts():
     q_gradB[:, :, 1] = bbb.vycb[:, :, 0] * p
 
     return q_ExB, q_gradB
+
+
+def compute_lambdaq_extended(Bt, q95, R):
+    """G. Federici et al Nucl. Fusion 64 (2024) 036025
+
+    :param Bt: Toroidal field
+    :param q95: q95
+    :param R: Major radius
+    :return: lambda_q
+    """
+
+    lambda_q_mm = 0.73 * (Bt**-0.78) * (q95**1.2) * (R**0.1)
+
+    print("\n--- Eich λq Scaling ---")
+    print("Formula: λq [mm] = 0.73 x Bt^(-0.78) x q95^(1.2) x R^(0.1)")
+    print(
+        f"         λq = 0.73 x ({Bt:.3f})^(-0.78) x ({q95:.3f})^(1.2) x ({R:.3f})^(0.1)"
+    )
+    print(f"         λq ≈ {lambda_q_mm:.2f} mm\n")
+
+    return lambda_q_mm
+
+
+def compute_lambdaq_mastu_Hmode(Bpol: float, Psol: float) -> float:
+    """Compute lambda_q scaling for MAST-U H-mode plasmas (Thornton et al, Plasma Phys. Control. Fusion 56 (2014) 055008 (9pp)))
+
+    :param Bpol: Poloidal magnetic field [T]
+    :param Psol: Power crossing the separatrix [MW/m^2???]
+    :return lambda_q: Lambda_q [mm]
+    """
+    lambda_q_mm = 1.84 * Bpol ** (-0.68) * Psol ** (0.18)
+    print(r"Predicted λq ≈ {:.2f} mm".format(lambda_q_mm))
+    return lambda_q_mm
+
+
+def compute_lambdaq_bpol(Bpol):
+    """
+    Compute Eich λq [mm] based on local Bpol in Tesla.
+    λq = 0.73 x Bpol^(-1.19)
+    """
+    lambda_q = 0.63 * Bpol ** (-1.19)
+    print("λq = 0.73 x Bpol^(-1.19)")
+    print(f"λq ≈ {lambda_q:.2f} mm\n")
+    return lambda_q
+
+
+def q_exp_fit(omp: bool = False):
+    """Calculate an exponential fit of the parallel heat flux decay length projected to the outer midplane
+
+    :param omp: Whether to use flux at outer midplane (if False, use flux at outer divertor)
+    :return: xq, qparo, qofit, expfun, lqo, omax
+    """
+    compute_lambdaq_mastu_Hmode(
+        com.bpol[bbb.ixmp, com.iysptrx + 1, 3], (bbb.pcoree + bbb.pcorei) / 1e6
+    )
+
+    # Bpol_example = 0.5499  # T, from com.bpol[ixmp, iysptrx, 0]
+    # compute_lambdaq_bpol(Bpol_example)
+
+    ###R_omp - R_sep (m)
+    yyc = com.yyc
+
+    ###R_div - R_sep (m) : Outer divertor
+    yyrb = com.yyrb[:, 0]
+
+    q_para_odiv = (bbb.feex[com.ixrb[0], :] + bbb.feix[com.ixrb[0], :]) / com.sxnp[
+        com.ixrb[0], :
+    ]
+
+    q_para_omp = (bbb.feey[bbb.ixmp, :] + bbb.feiy[bbb.ixmp, :]) / com.sxnp[
+        com.ixrb[0], :
+    ]
+
+    # q_para_odiv = bbb.ne[com.ixrb[0], :]
+    # q_para_omp = bbb.ne[bbb.ixmp, :]
+    # q_para_odiv = bbb.te[com.ixrb[0], :] / bbb.ev
+    # q_para_omp = bbb.te[bbb.ixmp, :] / bbb.ev
+
+    # q_perp_odiv = (bbb.feey[com.ixrb[0], :] + bbb.feiy[com.ixrb[0], :]) / com.sxnp[
+    #     com.ixrb[0], :
+    # ]
+
+    s_omp = yyrb
+
+    # select q_para at odiv or omp for the exponential fitting
+
+    if omp is True:
+        q_fit = q_para_omp
+    else:
+        q_fit = q_para_odiv
+
+    interp_fun = interp1d(s_omp, q_fit, kind="cubic", fill_value="extrapolate")
+    s_interp = np.linspace(s_omp.min(), s_omp.max(), 300)
+    q_interp = interp_fun(s_interp)
+
+    iy = com.iysptrx  # sep
+    xq = yyc[iy:-1]
+    qparo = q_fit[iy:-1]
+
+    expfun = lambda x, A, lamda_q_inv: A * np.exp(-x * lamda_q_inv)
+
+    try:
+        omax = np.argmax(qparo)
+        qofit, _ = curve_fit(
+            expfun,
+            xq[omax:],
+            qparo[omax:],
+            p0=[np.max(qparo), 1000],
+            bounds=(0, np.inf),
+        )
+        lqo = 1000 / qofit[1]
+    except Exception as e:
+        print("q_parallel outer fit failed:", e)
+        qofit = None
+        lqo = 1.0
+
+    return xq, qparo, qofit, expfun, lqo, omax

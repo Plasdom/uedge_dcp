@@ -704,6 +704,8 @@ def plotrprof(
     else:
         ix0 = ix
 
+    xcoord = com.rm[ix0, :, 0]
+
     # if use_psin:
     #     psin = (com.psi - com.simagx) / (com.sibdry - com.simagx)
     #     xcoord = psin[ix0, :, 0]
@@ -713,7 +715,7 @@ def plotrprof(
     #     # xcoord = com.rm[bbb.ixmp, :, 0] - com.rm[bbb.ixmp, com.iysptrx, 0]
     #     xlabel = "rho=R-Rsep [m]"
 
-    ax.plot(var[ix0, :], marker="x")
+    ax.plot(xcoord, var[ix0, :], marker="x")
 
     if xlim:
         ax.set_xlim(xlim)
@@ -732,3 +734,35 @@ def plotrprof(
 
     if show:
         plt.show()
+
+
+def plot_q_exp_fit(omp: bool = False) -> None:
+    """Plot an exponential fit of the parallel heat flux decay length projected to the outer midplane
+
+    :param omp: Whether to use flux at outer midplane (if False, use flux at outer divertor)
+    """
+    xq, qparo, qofit, expfun, lqo, omax = pp.q_exp_fit(omp)
+
+    fig, ax = plt.subplots(1, figsize=(4.5, 2.75))
+    # c0, c1 = "blue", "green"
+    ax.plot(xq, qparo / 1e6, marker="x", linestyle="--", color="black", label=r"UEDGE")
+
+    if qofit is not None:
+        ax.plot(
+            xq[omax:],
+            expfun(xq[omax:], *qofit) / 1e6,
+            c="red",
+            ls="--",
+            label=r"Exp Fit: $\lambda_q$ = %.2f mm" % lqo,
+        )
+
+    ax.set_xlabel(r"$r_{omp} - r_{sep}$ (m)")
+    if omp is True:
+        ax.set_ylabel(r"$q_\parallel^{OMP}$ (MW/m$^2$)")
+    else:
+        ax.set_ylabel(r"$q_\parallel^{Odiv}$ (MW/m$^2$)")
+
+    ax.set_ylim([0, np.max(qparo / 1e6) * 1.2])
+    ax.grid(True)
+    ax.legend()
+    fig.tight_layout()
