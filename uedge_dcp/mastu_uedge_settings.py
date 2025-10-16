@@ -3,6 +3,7 @@ from uedge.rundt import rundt
 import os
 from uedge.hdf5 import *
 from scipy.interpolate import interp1d
+import subprocess
 
 
 def set_geometry(
@@ -40,11 +41,18 @@ def set_geometry(
         bbb.ixmp = ixmp
 
 
-def set_apdirs(uebasedir: str = "/Users/power8/Documents/01_code/01_uedge/uedge"):
+# def set_apdirs(uebasedir: str = "/Users/power8/Documents/01_code/01_uedge/uedge"):
+def set_apdirs(uebasedir: str | None = None):
     """Set directories for hydrogen and impurity data
 
     :param uebasedir: UEDGE source code base directory, defaults to "/Users/power8/Documents/01_code/01_uedge"
     """
+    if uebasedir is None:
+        hostname = subprocess.check_output(["hostname"], text=True).strip("\n")
+        if hostname == "skywalker17":
+            uebasedir = "/Users/power8/Documents/01_code/01_uedge/uedge"
+        else:
+            uebasedir = "/global/homes/d/dpow1/01_code/UEDGE"
     api.apidir = os.path.join(uebasedir, "api")
     aph.aphdir = os.path.join(uebasedir, "aph")
 
