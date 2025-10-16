@@ -17,42 +17,71 @@ def plot_q_plates():
     bbb.plateflux()
     q_odata = (bbb.sdrrb + bbb.sdtrb).T
     q_idata = (bbb.sdrlb + bbb.sdtlb).T
-    q1 = q_odata[0]
-    q2 = q_odata[1]
-    q3 = q_idata[1]
-    q4 = q_idata[0]
-    r1 = com.yyrb.T[0]
-    r2 = com.yyrb.T[1]
-    r3 = com.yylb.T[1]
-    r4 = com.yylb.T[0]
+    if com.nxpt == 1:
+        q1 = q_odata[0]
+        q2 = q_idata[0]
+        r1 = com.yyrb.T[0]
+        r2 = com.yylb.T[0]
 
-    P1, P2, P3, P4 = pp.get_Q_target_proportions()
-    Ptot = P1 + P2 + P3 + P4
+        # P1, P2, P3, P4 = pp.get_Q_target_proportions()
+        # Ptot = P1 + P2 + P3 + P4
 
-    print("Power delivered to each target plate: ")
-    print(
-        "SP1: {:.1f}".format(100 * P1 / Ptot)
-        + "%, "
-        + "SP2: {:.1f}".format(100 * P2 / Ptot)
-        + "%, "
-        + "SP3: {:.1f}".format(100 * P3 / Ptot)
-        + "%, "
-        + "SP4: {:.1f}".format(100 * P4 / Ptot)
-        + "%, "
-    )
+        # print("Power delivered to each target plate: ")
+        # print(
+        #     "SP1 (outer): {:.1f}".format(100 * P1 / Ptot)
+        #     + "%, "
+        #     + "SP2 (inner): {:.1f}".format(100 * P2 / Ptot)
+        #     + "% "
+        # )
 
-    fig, ax = plt.subplots(4, 1)
+        fig, ax = plt.subplots(2, 1)
 
-    (c,) = ax[0].plot(r1, q1 / 1e6, label="SP1")
-    ax[1].plot(r2, q2 / 1e6, label="SP2")
-    ax[2].plot(r3, q3 / 1e6, label="SP3")
-    ax[3].plot(r4, q4 / 1e6, label="SP4")
+        (c,) = ax[0].plot(r1, q1 / 1e6, label="SP1 (outer)")
+        ax[1].plot(r2, q2 / 1e6, label="SP2 (inner)")
 
-    [ax[i].grid() for i in range(4)]
-    [ax[i].legend(loc="upper right") for i in range(4)]
-    ax[1].set_ylabel("Heat flux [MWm$^{-2}$]")
-    ax[-1].set_xlabel("Distance along target plate [m]")
-    fig.tight_layout()
+        [ax[i].grid() for i in range(2)]
+        [ax[i].legend(loc="upper right") for i in range(2)]
+        ax[1].set_ylabel("Heat flux [MWm$^{-2}$]")
+        ax[-1].set_xlabel("Distance along target plate [m]")
+        fig.tight_layout()
+
+    elif com.nxpt == 2:
+        q1 = q_odata[0]
+        q2 = q_odata[1]
+        q3 = q_idata[1]
+        q4 = q_idata[0]
+        r1 = com.yyrb.T[0]
+        r2 = com.yyrb.T[1]
+        r3 = com.yylb.T[1]
+        r4 = com.yylb.T[0]
+
+        P1, P2, P3, P4 = pp.get_Q_target_proportions()
+        Ptot = P1 + P2 + P3 + P4
+
+        print("Power delivered to each target plate: ")
+        print(
+            "SP1: {:.1f}".format(100 * P1 / Ptot)
+            + "%, "
+            + "SP2: {:.1f}".format(100 * P2 / Ptot)
+            + "%, "
+            + "SP3: {:.1f}".format(100 * P3 / Ptot)
+            + "%, "
+            + "SP4: {:.1f}".format(100 * P4 / Ptot)
+            + "%, "
+        )
+
+        fig, ax = plt.subplots(4, 1)
+
+        (c,) = ax[0].plot(r1, q1 / 1e6, label="SP1")
+        ax[1].plot(r2, q2 / 1e6, label="SP2")
+        ax[2].plot(r3, q3 / 1e6, label="SP3")
+        ax[3].plot(r4, q4 / 1e6, label="SP4")
+
+        [ax[i].grid() for i in range(4)]
+        [ax[i].legend(loc="upper right") for i in range(4)]
+        ax[1].set_ylabel("Heat flux [MWm$^{-2}$]")
+        ax[-1].set_xlabel("Distance along target plate [m]")
+        fig.tight_layout()
 
 
 def comparemesh(
@@ -171,6 +200,7 @@ def plotvar(
     xlim: tuple = (None, None),
     ylim: tuple = (None, None),
     cmap: str = "inferno",
+    savepath: str = None,
 ):
     """Plot a variable on the UEDGE mesh. Variable must have same dimensions as grid.
 
@@ -229,7 +259,7 @@ def plotvar(
         norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     ###p = PatchCollection(patches, cmap=cmap, norm=norm)
     if mesh:
-        lw = 0.1
+        lw = 0.05
     else:
         lw = 1e-6
     p = PatchCollection(
@@ -267,6 +297,9 @@ def plotvar(
 
     # if show:
     #     plt.show()
+
+    if savepath is not None:
+        fig.savefig(savepath)
 
 
 def animatevar(
@@ -379,6 +412,30 @@ def animatevar(
     return surf1_slider
 
 
+def plot_q_drifts(
+    logscale_linewidth: bool = True, linewidth_mult: float = 50, **kwargs
+):
+    """Plot ExB and grad B drift heat flux streamlines
+
+    :param kwargs: Keyword arguments for streamplotvar()
+    """
+    q_ExB, q_gradB = pp.get_q_drifts()
+    streamplotvar(
+        q_ExB[:, :, 0],
+        q_ExB[:, :, 1],
+        logscale_linewidth=logscale_linewidth,
+        linewidth_mult=linewidth_mult,
+        **kwargs,
+    )
+    streamplotvar(
+        q_gradB[:, :, 0],
+        q_gradB[:, :, 1],
+        logscale_linewidth=logscale_linewidth,
+        linewidth_mult=linewidth_mult,
+        **kwargs,
+    )
+
+
 def streamplotvar(
     pol: np.ndarray,
     rad: np.ndarray,
@@ -454,6 +511,16 @@ def streamplotvar(
         y[1:-1, 1:-1].ravel(),
         (gx, gy),
     )
+    # xinterp = griddata(
+    #     (sxmid[1, 0, :, :].ravel(), sxmid[1, 1, :, :].ravel()),
+    #     x.ravel(),
+    #     (gx, gy),
+    # )
+    # yinterp = griddata(
+    #     (symid[1, 0, :, :].ravel(), symid[1, 1, :, :].ravel()),
+    #     y.ravel(),
+    #     (gx, gy),
+    # )
 
     if mask is True:
         # Create polygons for masking
@@ -499,8 +566,14 @@ def streamplotvar(
             outery += list(zm[com.ixpt2[1] + 1 : -1, 0, 1][::-1])
             outery += list(zm[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, 0, 2])
 
-        innerx = rm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]
-        innery = zm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]
+        # innerx = rm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]
+        # innery = zm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]
+        innerx = list(rm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]) + [
+            rm[com.ixpt2[0], 0, 2]
+        ]
+        innery = list(zm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]) + [
+            zm[com.ixpt2[0], 0, 2]
+        ]
 
         outer = Polygon(
             array([outerx, outery]).transpose(),
@@ -518,8 +591,10 @@ def streamplotvar(
             for j in range(gx.shape[1]):
                 p = (gx[i, j], gy[i, j])
                 if (inner.contains_point(p)) or (not outer.contains_point(p)):
-                    xinterp[i, j] = nan
-                    yinterp[i, j] = nan
+                    # xinterp[i, j] = nan
+                    # yinterp[i, j] = nan
+                    xinterp[i, j] = 0
+                    yinterp[i, j] = 0
 
     if linewidth == "magnitude":
         lw_setting = linewidth
@@ -629,8 +704,15 @@ def streamplotvar(
     if title != "":
         ax.set_title(title)
 
-    # ax.plot(outerx, outery)
-    # ax.plot(innerx, innery)
+    ax.plot(outerx, outery)
+    ax.plot(innerx, innery)
+    # ax.scatter(
+    #     gx.flatten(),
+    #     gy.flatten(),
+    #     marker="o",
+    #     s=0.25,
+    #     c=yinterp.flatten(),
+    # )
 
 
 def plotcell(i: list):
@@ -644,9 +726,59 @@ def plotcell(i: list):
     ch = np.zeros((com.nx + 2, com.ny + 2))
 
     for cell_idx in i:
-        ch[cell_idx[0], cell_idx[1]] = 1.0 + np.random.random() * 0.1
+        ch[cell_idx[0], cell_idx[1]] = 1.0
 
-    plotvar(ch)
+    var = ch
+
+    # plotvar(ch, mesh=True, cmap="inferno", vmin=0, vmax=1)
+    patches = []
+
+    rm = com.rm
+    zm = com.zm
+    nx = com.nx
+    ny = com.ny
+
+    for iy in np.arange(0, ny + 2):
+        for ix in np.arange(0, nx + 2):
+            rcol = rm[ix, iy, [1, 2, 4, 3]]
+            zcol = zm[ix, iy, [1, 2, 4, 3]]
+            rcol.shape = (4, 1)
+            zcol.shape = (4, 1)
+            polygon = Polygon(np.column_stack((rcol, zcol)))
+            patches.append(polygon)
+
+    # -is there a better way to cast input data into 2D array?
+    vals = np.zeros((nx + 2) * (ny + 2))
+
+    for iy in np.arange(0, ny + 2):
+        for ix in np.arange(0, nx + 2):
+            k = ix + (nx + 2) * iy
+            if var[ix, iy] == 0.0:
+                vals[k] = np.nan
+            else:
+                vals[k] = var[ix, iy]
+
+    # Set vmin and vmax disregarding guard cells
+    vmin = 1
+    vmax = 10
+
+    norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+    ###p = PatchCollection(patches, cmap=cmap, norm=norm)
+    lw = 0.05
+    p = PatchCollection(
+        patches, norm=norm, cmap="inferno", edgecolors="black", linewidths=lw
+    )
+
+    p.set_array(np.array(vals))
+
+    fig, ax = plt.subplots(1)
+    ax.set_aspect("equal")  # regular aspect-ratio
+
+    ax.add_collection(p)
+    ax.autoscale_view()
+
+    ax.set_xlabel("R [m]")
+    ax.set_ylabel("Z [m]")
 
 
 def plotpslice(iy: int):
@@ -736,18 +868,35 @@ def plotrprof(
         plt.show()
 
 
-def plot_q_exp_fit(omp: bool = False) -> None:
+def plot_q_exp_fit(omp: bool = False, method: str = "eich", ixmp=None) -> None:
     """Plot an exponential fit of the parallel heat flux decay length projected to the outer midplane
 
     :param omp: Whether to use flux at outer midplane (if False, use flux at outer divertor)
+    :param method: 'eich' or 'exp'
     """
-    xq, qparo, qofit, expfun, lqo, omax = pp.q_exp_fit(omp)
+    # xq, qparo, qofit, expfun, lqo, omax = pp.q_exp_fit_old(omp, ixmp)
+
+    (
+        xq,
+        qparo,
+        qofit,
+        expfun,
+        omax,
+        lqo,
+        q_omp,
+        s_omp,
+        q_fit_full,
+        s_fit,
+        eich_lqo,
+    ) = pp.eich_exp_shahinul_odiv_final(omp, ixmp)
 
     fig, ax = plt.subplots(1, figsize=(4.5, 2.75))
     # c0, c1 = "blue", "green"
-    ax.plot(xq, qparo / 1e6, marker="x", linestyle="--", color="black", label=r"UEDGE")
+    if method == "exp":
+        ax.plot(
+            xq, qparo / 1e6, marker="x", linestyle="--", color="black", label=r"UEDGE"
+        )
 
-    if qofit is not None:
         ax.plot(
             xq[omax:],
             expfun(xq[omax:], *qofit) / 1e6,
@@ -755,14 +904,34 @@ def plot_q_exp_fit(omp: bool = False) -> None:
             ls="--",
             label=r"Exp Fit: $\lambda_q$ = %.2f mm" % lqo,
         )
+        ax.set_ylim([0, np.max(qparo / 1e6) * 1.2])
+        ax.set_xlabel(r"$r_{omp} - r_{sep}$ [m]")
+        if omp is True:
+            ax.set_ylabel(r"$q_\parallel^{OMP}$ [MWm$^{-2}$]")
+        else:
+            ax.set_ylabel(r"$q_\parallel^{Odiv}$ [MWm$^{-2}$]")
+        print(r"Eich fit comparison: lambda_q = {:.2f} mm".format(eich_lqo))
+    elif method == "eich":
+        ax.plot(
+            s_omp,
+            1e-6 * q_omp,
+            marker="x",
+            color="black",
+            linestyle="--",
+            label="UEDGE",
+        )
+        ax.plot(
+            s_fit,
+            1e-6 * q_fit_full,
+            color="red",
+            linestyle="--",
+            label=r"Eich fit: $\lambda_q$ = {:.2f} mm".format(eich_lqo),
+        )
 
-    ax.set_xlabel(r"$r_{omp} - r_{sep}$ (m)")
-    if omp is True:
-        ax.set_ylabel(r"$q_\parallel^{OMP}$ (MW/m$^2$)")
-    else:
-        ax.set_ylabel(r"$q_\parallel^{Odiv}$ (MW/m$^2$)")
+        ax.set_xlabel(r"$r - r_{sep}$ [m]")
+        ax.set_ylabel(r"$q_{\perp}$ [MWm$^{-2}$]")
+        print(r"Exponential fit comparison: lambda_q = {:.2f} mm".format(lqo))
 
-    ax.set_ylim([0, np.max(qparo / 1e6) * 1.2])
     ax.grid(True)
     ax.legend()
     fig.tight_layout()

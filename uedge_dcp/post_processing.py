@@ -3,6 +3,7 @@ from uedge import *
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.interpolate import interp1d
+from scipy.special import erfc
 
 
 def mask_guard_cells(variable: np.ndarray):
@@ -188,43 +189,251 @@ def compute_lambdaq_bpol(Bpol):
     return lambda_q
 
 
-def q_exp_fit(omp: bool = False):
+def getrrf() -> np.ndarray:
+    """Written by Shahinul Islam
+
+    :return: rrf
+    """
+    bpol_local = 0.5 * (com.bpol[:, :, 2] + com.bpol[:, :, 4])
+    bphi_local = 0.5 * (com.bphi[:, :, 2] + com.bphi[:, :, 4])
+    btot_local = np.sqrt(bpol_local**2 + bphi_local**2)
+    return bpol_local / btot_local
+
+
+def compute_fx(ixmp: int = None) -> np.ndarray:
+    """Written by Shahinul Islam
+
+    :param ixmp: Midplane index, defaults to None
+    :return: Flux expansion
+    """
+    if ixmp is None:
+        ixmp = bbb.ixmp
+
+    # Divertor values
+    Bpol_div = com.bpol[com.nx, :, 0]
+    Btor_div = com.bphi[com.nx, :, 0]
+    B_div = np.sqrt(Bpol_div**2 + Btor_div**2)
+
+    # Midplane values
+    Bpol_omp = com.bpol[ixmp, :, 0]
+    Btor_omp = com.bphi[ixmp, :, 0]
+    B_omp = np.sqrt(Bpol_omp**2 + Btor_omp**2)
+
+    # Pitch angle at divertor
+    sin_theta = Bpol_div / B_div
+
+    # Flux expansion
+    fx = (B_div / B_omp) * (1.0 / sin_theta)
+
+    fx_simple = (com.bpol[ixmp, :, 0] * com.rm[ixmp, :, 0]) / (
+        com.bpol[com.nx, :, 0] * com.rm[com.nx, :, 0]
+    )
+
+    return fx, fx_simple
+
+
+def calculate_flux_expansion(ixmp: int = None):
+    """
+    Written by Shahinul Islam. Calculate poloidal and tilt flux expansion for the CD configuration.
+    D. Moulton et al., Nucl. Fusion 64 (2024) 076049 (31pp)
+
+    Uses:
+        com.bpol, com.bphi: 3D arrays of poloidal and toroidal fields
+        bbb.ixmp, com.iysptrx, com.nx: indices
+        fieldLineAngle(): function returning field angle array
+
+    """
+    if ixmp is None:
+        ixmp = com.ixmp
+    bpol_u = com.bpol[ixmp, com.iysptrx + 1, 0]
+    bphi_u = abs(com.bphi[ixmp, com.iysptrx + 1, 0])
+    bpol_t = com.bpol[com.nx, com.iysptrx + 1, 0]
+    bphi_t = abs(com.bphi[com.nx, com.iysptrx + 1, 0])  # Fixed this line
+    # alpha_tilt_deg = fieldLineAngle()
+    # alpha_tilt_target = alpha_tilt_deg[com.nx,com.iysptrx+1]
+    # alpha_tilt = np.radians(alpha_tilt_target)
+
+    FX_theta = (bpol_u / bphi_u) / (bpol_t / bphi_t)
+    # FX_tilt = 1 / np.sin(alpha_tilt)
+    return FX_theta
+
+
+def eich_exp_shahinul_odiv_final(
+    omp: bool = False, ixmp: int = None, save_prefix="lambdaq_result"
+):
+    """Written by Shahinul Islam
+
+    :param omp: Whether to fit at OMP, defaults to False
+    :param save_prefix: Save location, defaults to 'lambdaq_result'
+    :return: _description_
+    """
+    if ixmp is None:
+        ixmp = bbb.ixmp
+        yyc = com.yyc.reshape(-1)[:-1]
+    else:
+        yyc = get_yyc(ixmp=ixmp)
+        yyc = yyc.reshape(-1)[:-1]
+
+    fx = calculate_flux_expansion(ixmp=ixmp)
+    fx = np.round(fx)
+
+    # print("fx", fx)
+
+    # === Select which q_parallel to fit (OMP vs ODIV)
+    bbb.plateflux()
+    # ppar = Pparallel()
+    ppar = (
+        bbb.feex + bbb.feix + 0.5 * bbb.mi[0] * bbb.up[:, :, 0] ** 2 * bbb.fnix[:, :, 0]
+    )
+    rrf = getrrf()
+    # rrf = com.sxnp
+    q_para_omp = ppar[ixmp, :-1] / com.sx[ixmp, :-1] / rrf[ixmp, :-1]
+    q_para_odiv = ppar[com.nx, :-1] / com.sx[com.nx, :-1] / rrf[com.nx, :-1]
+    q_data = bbb.sdrrb + bbb.sdtrb
+    q_perp_odiv = q_data.reshape(-1)[:-1]
+    yyrb = com.yyrb.reshape(-1)[:-1]
+
+    s_omp = com.yyrb[:-1]
+    q_fit = q_para_omp if omp else q_para_odiv
+
+    s_omp = s_omp.flatten()
+    q_fit = q_fit.flatten()
+
+    interp_fun = interp1d(s_omp, q_fit, kind="cubic", fill_value="extrapolate")
+    s_interp = np.linspace(s_omp.min(), s_omp.max(), 300)
+    q_interp = interp_fun(s_interp)
+    iy_sep = com.iysptrx + 1
+
+    # === Exponential Fit ===
+    xq = yyc[iy_sep:-1]
+
+    qparo = q_fit[iy_sep:-1]
+    expfun = lambda x, A, lamda_q_inv: A * np.exp(-x * lamda_q_inv)
+
+    try:
+        omax = np.argmax(qparo)
+        expfun = lambda x, A, lamda_q_inv: A * np.exp(-x * lamda_q_inv)
+        qofit, _ = curve_fit(
+            expfun, xq[omax:], qparo[omax:], p0=[np.max(qparo), 100], bounds=(0, np.inf)
+        )
+        lqo = 1000 / qofit[1]
+    except Exception as e:
+        print("q_parallel outer fit failed:", e)
+        qofit = None
+        lqo = 1.0
+
+    xq_omp = xq
+
+    # === Eich Function ===
+    def eichFunction(x, S, lq, q0, s0):
+        sBar = x - s0
+        t0 = (S / (2 * lq * fx)) ** 2
+        t1 = sBar / (lq * fx)
+        t2 = S / (2 * lq * fx)
+        t3 = sBar / S
+        q_back = q0 * 1e-3
+        return (q0 / 2) * np.exp(t0 - t1) * erfc(t2 - t3) + q_back
+
+    # === Fit Eich Function ===
+    s_omp = yyrb
+    q_omp = q_perp_odiv
+    interp_fun = interp1d(s_omp, q_omp, kind="cubic", fill_value="extrapolate")
+    s_interp = np.linspace(s_omp.min(), s_omp.max(), 300)
+    q_interp = interp_fun(s_interp)
+    s_fit = s_interp
+    q_fit = q_interp
+    s0_guess = np.median(s_fit)
+    q0_guess = np.max(q_fit)
+
+    p0 = [0.003, 0.002, q0_guess, s0_guess]
+    bounds = (
+        [0.0005, 0.0005, 1e5, s_fit.min() - 0.01],
+        [0.02, 0.02, 1e9, s_fit.max() + 0.01],
+    )
+
+    try:
+        popt, _ = curve_fit(
+            eichFunction, s_fit, q_fit, p0=p0, bounds=bounds, maxfev=10000
+        )
+        S_fit, lambda_q_fit, q0_fit, s0_fit = popt
+        q_fit_full = eichFunction(s_fit, *popt)
+
+        # R
+        residuals = q_fit - q_fit_full
+        ss_res = np.sum(residuals**2)
+        ss_tot = np.sum((q_fit - np.mean(q_fit)) ** 2)
+        r_squared = 1 - (ss_res / ss_tot)
+    except Exception as e:
+        print("Eich fit failed:", e)
+        popt = [0, 0, 0, 0]
+        lambda_q_fit = 0.0
+        r_squared = 0.0
+
+    return (
+        xq,
+        qparo,
+        qofit,
+        expfun,
+        omax,
+        lqo,
+        q_omp,
+        s_omp,
+        q_fit_full,
+        s_fit,
+        lambda_q_fit * 1000,
+    )
+
+
+def q_exp_fit_old(omp: bool = False, ixmp=None):
     """Calculate an exponential fit of the parallel heat flux decay length projected to the outer midplane
 
     :param omp: Whether to use flux at outer midplane (if False, use flux at outer divertor)
     :return: xq, qparo, qofit, expfun, lqo, omax
     """
+    if ixmp is None:
+        ixmp = bbb.ixmp
+        yyc = com.yyc
+    else:
+        yyc = get_yyc(ixmp=ixmp)
     compute_lambdaq_mastu_Hmode(
-        com.bpol[bbb.ixmp, com.iysptrx + 1, 3], (bbb.pcoree + bbb.pcorei) / 1e6
+        com.bpol[ixmp, com.iysptrx + 1, 3], (bbb.pcoree + bbb.pcorei) / 1e6
     )
 
     # Bpol_example = 0.5499  # T, from com.bpol[ixmp, iysptrx, 0]
     # compute_lambdaq_bpol(Bpol_example)
 
     ###R_omp - R_sep (m)
-    yyc = com.yyc
+    yyc = yyc[:-1]
 
     ###R_div - R_sep (m) : Outer divertor
     yyrb = com.yyrb[:, 0]
+    rrf = getrrf()
 
-    q_para_odiv = (bbb.feex[com.ixrb[0], :] + bbb.feix[com.ixrb[0], :]) / com.sxnp[
-        com.ixrb[0], :
-    ]
+    # q_para_odiv = (bbb.feex[com.ixrb[0], :] + bbb.feix[com.ixrb[0], :]) / com.sxnp[
+    #     com.ixrb[0], :
+    # ]
 
-    q_para_omp = (bbb.feey[bbb.ixmp, :] + bbb.feiy[bbb.ixmp, :]) / com.sxnp[
-        com.ixrb[0], :
-    ]
+    P_par = (
+        bbb.feex + bbb.feix + 0.5 * bbb.mi[0] * bbb.up[:, :, 0] ** 2 * bbb.fnix[:, :, 0]
+    )
+    q_para_odiv = (
+        P_par[com.ixrb[0], :-1] / com.sx[com.ixrb[0], :-1] / rrf[com.ixrb[0], :-1]
+    )
 
+    # q_para_omp = (bbb.feey[ixmp, :] + bbb.feiy[ixmp, :]) / com.sxnp[ixmp, :]
+    # q_para_omp = (bbb.feex[ixmp, :] + bbb.feix[ixmp, :]) / com.sxnp[ixmp, :]
+    q_para_omp = q_para_odiv
     # q_para_odiv = bbb.ne[com.ixrb[0], :]
-    # q_para_omp = bbb.ne[bbb.ixmp, :]
+    # q_para_omp = bbb.ne[ixmp, :]
     # q_para_odiv = bbb.te[com.ixrb[0], :] / bbb.ev
-    # q_para_omp = bbb.te[bbb.ixmp, :] / bbb.ev
+    # q_para_omp = bbb.te[ixmp, :] / bbb.ev
 
     # q_perp_odiv = (bbb.feey[com.ixrb[0], :] + bbb.feiy[com.ixrb[0], :]) / com.sxnp[
     #     com.ixrb[0], :
     # ]
 
-    s_omp = yyrb
+    # s_omp = yyrb
+    s_omp = yyc
 
     # select q_para at odiv or omp for the exponential fitting
 
@@ -249,7 +458,8 @@ def q_exp_fit(omp: bool = False):
             expfun,
             xq[omax:],
             qparo[omax:],
-            p0=[np.max(qparo), 1000],
+            p0=[np.max(qparo), 1],
+            # bounds=[(0, 0), (np.inf, 100)],
             bounds=(0, np.inf),
         )
         lqo = 1000 / qofit[1]
@@ -259,3 +469,79 @@ def q_exp_fit(omp: bool = False):
         lqo = 1.0
 
     return xq, qparo, qofit, expfun, lqo, omax
+
+
+def get_midplane_vals(
+    f: np.ndarray, rm: np.ndarray = None, zm: np.ndarray = None, ixmp: int = None
+) -> tuple[np.ndarray, np.ndarray]:
+    """Find the values of an array at the midplane
+
+    :param f: Variable on UEDGE grid
+    :param rm: R grid coords, defaults to None
+    :param zm: Z grid coords, defaults to None
+    :param ixmp: Midplane index, defaults to None
+    :return: x_mp (midplane radial coordinates), f_mp (midplane radial profile)
+    """
+    if rm is None:
+        rm = com.rm
+        zm = com.zm
+    if ixmp is None:
+        ixmp = bbb.ixmp
+    x_mp = 0.5 * (rm[ixmp, :, 1] + rm[ixmp, :, 3])
+    y_mp = 0.5 * (zm[ixmp, :, 1] + zm[ixmp, :, 3])
+    x_1 = rm[ixmp - 1, :, 0]
+    y_1 = zm[ixmp - 1, :, 0]
+    x_2 = rm[ixmp, :, 0]
+    y_2 = zm[ixmp, :, 0]
+    d_1 = np.sqrt((x_1 - x_mp) ** 2 + (y_1 - y_mp) ** 2)
+    d_2 = np.sqrt((x_2 - x_mp) ** 2 + (y_2 - y_mp) ** 2)
+    f_mp = (d_2 * f[ixmp - 1, :] + d_1 * f[ixmp, :]) / (d_1 + d_2)
+    return x_mp, f_mp
+
+
+def get_yyc(
+    rm: np.ndarray = None, zm: np.ndarray = None, ixmp: int = None, iysptrx: int = None
+) -> np.ndarray:
+    """Calculate yyc when UEDGE fails to do so correctly in isudsym=1 cases
+
+    :param rm: R grid coords, defaults to None
+    :param zm: Z grid coords, defaults to None
+    :param ixmp: Midplane index, defaults to None
+    :param iysptrx: Separatrix index, defaults to None
+    :return: yyc
+    """
+    if rm is None:
+        rm = com.rm
+        zm = com.zm
+    if ixmp is None:
+        ixmp = bbb.ixmp
+    if iysptrx is None:
+        iysptrx = com.iysptrx1[0]
+
+    r_mp = rm[ixmp, :, 0]
+    z_mp = zm[ixmp, :, 0]
+
+    r_sep = 0.5 * (rm[ixmp, com.iysptrx1[0], 3] + rm[ixmp, com.iysptrx1[0], 4])
+    z_sep = 0.5 * (zm[ixmp, com.iysptrx1[0], 3] + zm[ixmp, com.iysptrx1[0], 4])
+
+    y_mp = np.zeros(len(r_mp))
+    y_mp[iysptrx + 1] = np.sqrt(
+        (r_mp[iysptrx + 1] - r_sep) ** 2 + (z_mp[iysptrx + 1] - z_sep) ** 2
+    )
+    y_mp[iysptrx] = -np.sqrt(
+        (r_mp[iysptrx] - r_sep) ** 2 + (z_mp[iysptrx] - z_sep) ** 2
+    )
+    for iy in reversed(
+        range(
+            iysptrx,
+        )
+    ):
+        y_mp[iy] = y_mp[iy + 1] - np.sqrt(
+            (r_mp[iy] - r_mp[iy + 1]) ** 2 + (z_mp[iy] - z_mp[iy + 1]) ** 2
+        )
+    for iy in range(iysptrx + 2, len(y_mp)):
+        y_mp[iy] = y_mp[iy - 1] + np.sqrt(
+            (r_mp[iy] - r_mp[iy - 1]) ** 2 + (z_mp[iy] - z_mp[iy - 1]) ** 2
+        )
+
+    return y_mp

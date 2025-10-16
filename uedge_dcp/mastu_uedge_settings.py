@@ -5,6 +5,41 @@ from uedge.hdf5 import *
 from scipy.interpolate import interp1d
 
 
+def set_geometry(
+    gridfile: str,
+    geometry: str = "snull           ",
+    nxpt: int = 1,
+    isudsym: int = 0,
+    nxleg: int = None,
+    nxcore: int = None,
+    ixmp: int = None,
+):
+    """Set the geometry
+
+    :param gridfile: Gridfile to use
+    :param geometry: Geometry, defaults to "snull           "
+    :param nxpt: Number of X-points, defaults to 1
+    :param isudsym: Up/down symmetry, defaults to 0
+    :param nxleg: Number of pol cells in leg, defaults to None
+    :param nxcore: Number of pol cells in HFS core, defaults to None
+    :param ixmp: Poloidal index of outer midplane cells, defaults to None
+    """
+    os.system("ln -sf " + gridfile + " gridue")
+    bbb.mhdgeo = 1
+    com.geometry[0] = geometry
+    com.isudsym = isudsym
+    bbb.gengrid = 0
+    bbb.newgeo = 1
+    com.nxpt = nxpt
+    com.isnonog = 1
+    if nxleg is not None:
+        com.nxleg[0, 0] = nxleg
+    if nxcore is not None:
+        com.nxcore[0, 0] = nxcore
+    if ixmp is not None:
+        bbb.ixmp = ixmp
+
+
 def set_apdirs(uebasedir: str = "/Users/power8/Documents/01_code/01_uedge/uedge"):
     """Set directories for hydrogen and impurity data
 
@@ -33,6 +68,8 @@ def set_bcs(
     lyni: float = 0.1,
     lyt: float = 0.1,
     ncore: float = 3e19,
+    recycw: float = 0.98,
+    recycp: float = 0.98,
 ):
     """Set the boundary conditions
 
@@ -83,8 +120,8 @@ def set_bcs(
     bbb.matwsi[0] = 1  # =1 --> make the inner wall recycling.
     bbb.recycp = 1
     bbb.recycw = 1
-    bbb.recycw[0] = 0.98  # recycling coeff. at wall
-    bbb.recycp[0] = 0.98  # hydrogen recycling coeff. at plates
+    bbb.recycw[0] = recycw  # recycling coeff. at wall
+    bbb.recycp[0] = recycp  # hydrogen recycling coeff. at plates
     bbb.recycm = -0.7  # mom BC at plates:up(,,2) = -recycm*up(,,1)
 
 
@@ -233,7 +270,106 @@ def set_carbon_sputtering(fhaasz: float = 0):
     bbb.fchemygwo = fhaasz
 
 
-def set_perp_transport_coeffs_DM(ky_div: float = 1.0, dif_div: float = 1.0):
+def set_transport_coeffs_DM(
+    k_x: list = [-0.025, -0.02, -0.0025, 0.0004],
+    k_v: list = [2.5, 0.1, 0.1, 10.0],
+    d_x: list = [-0.025, -0.01, 0.0004, 0.01],
+    d_v: list = [2, 0.1, 0.1, 0.5],
+    inplace: bool = False,
+    dif_div: float = None,
+    ky_div: float = None,
+    travis: float = 1,
+    reverse_r_mp: bool = False,
+):
+    """Set radially-dependent transport coefficients
+
+    :param k_x: Radial coordinates (x-axis) of piecewise-linear function for thermal transport coeffs vs. radial location, defaults to [-0.025, -0.02, -0.0025, 0.0004]
+    :param k_v: Values (y-axis) of piecewise-linear function for thermal transport coeffs vs. radial location, defaults to [2.5, 0.1, 0.1, 10.0]
+    :param d_x: Radial coordinates (x-axis) of piecewise-linear function for particle transport coeffs vs. radial location, defaults to [-0.025, -0.01, 0.0004, 0.01]
+    :param d_v: Values (y-axis) of piecewise-linear function for particle transport coeffs vs. radial location, defaults to [2, 0.1, 0.1, 0.5]
+    :param inplace: Whether to modify the UEDGE values in place or return as arrays, defaults to False
+    :param dif_div: Value of particle transport coeffs to use below X-point, defaults to None
+    :param ky_div: Value of thermal transport coeffs to use below X-point, defaults to None
+    :param travis: Spatially-uniform viscosity, defaults to 1
+    :return: If inplace=True, return nothing. If inplace=False, return ky, dn arrays
+    """
+    runid = 1
+    grd.readgrid("gridue", runid)
+
+    # Set/reset other transport coeffs before calculating D_y and K_y
+    bbb.kye = 0  # 0.5		#chi_e for radial elec energy diffusion
+    bbb.kyi = 0  # 0.5		#chi_i for radial ion energy diffusion
+    bbb.difni[0] = 0  # .2  		#D for radial hydrogen diffusion        difniv()
+    bbb.difni = 0
+    bbb.travis[0] = travis  # eta_a for radial ion momentum diffusion
+    bbb.difutm = 1.0  # toroidal diffusivity for potential
+
+    # Now calculate D_y and K_y
+    # Define the functional form of diffusion coeffs vs. distance from separatrix
+    from scipy.interpolate import interp1d
+
+    # k_x = [-0.025, -0.02, -0.0025, 0.0004]
+    # k_v = [2.5, 0.1, 0.1, 10.0]
+    k_interp_func = interp1d(k_x, k_v, fill_value=(k_v[0], k_v[-1]), bounds_error=False)
+
+    # d_x = [-0.025, -0.01, 0.0004, 0.01]
+    # d_v = [2, 0.1, 0.1, 0.5]
+    d_interp_func = interp1d(d_x, d_v, fill_value=(d_v[0], d_v[-1]), bounds_error=False)
+
+    # Find distance from separatrix for each radial cell
+    r_sepx = com.rm[bbb.ixmp, com.iysptrx1[0], 3]
+    r_omp = 0.5 * (com.rm[bbb.ixmp, :, 3] + com.rm[bbb.ixmp, :, 1])
+    psi_sepx = com.psi[bbb.ixmp, com.iysptrx1[0], 3]
+    psi_omp = 0.5 * (com.psi[bbb.ixmp, :, 3] + com.psi[bbb.ixmp, :, 1])
+    if reverse_r_mp:
+        dist_from_sepx = -(r_omp - r_sepx)
+    else:
+        dist_from_sepx = r_omp - r_sepx
+
+    # Interpolate diffusion coeffs onto radial cells
+    k_radial = k_interp_func(dist_from_sepx)
+    d_radial = d_interp_func(dist_from_sepx)
+
+    # Apply to all poloidal cells
+    k_use = np.zeros((com.nx + 2, com.ny + 2))
+    d_use = np.zeros((com.nx + 2, com.ny + 2))
+
+    # Set the values in the core and SOL
+    for iy in range(com.ny + 2):
+        k_use[:, iy] = k_radial[iy]
+        d_use[:, iy] = d_radial[iy]
+
+        # Set the values below the X-point
+        for iy in range(com.ny + 2):
+            if ky_div is None:
+                k_use[: com.ixpt1[0] + 1, iy] = k_radial[-1]
+                k_use[com.ixpt2[0] + 1 :, iy] = k_radial[-1]
+            else:
+                k_use[: com.ixpt1[0] + 1, iy] = ky_div
+                k_use[com.ixpt2[0] + 1 :, iy] = ky_div
+            if dif_div is None:
+                d_use[: com.ixpt1[0] + 1, iy] = d_radial[-1]
+                d_use[com.ixpt2[0] + 1 :, iy] = d_radial[-1]
+            else:
+                d_use[: com.ixpt1[0] + 1, iy] = dif_div
+                d_use[com.ixpt2[0] + 1 :, iy] = dif_div
+
+    # Assign calculated values in UEDGE
+    target_ky = k_use
+    target_dif = np.zeros(bbb.dif_use.shape)
+    for isp in range(target_dif.shape[-1]):
+        target_dif[:, :, isp] = d_use
+
+    if inplace:
+        bbb.kye_use = target_ky
+        bbb.kyi_use = target_ky
+        bbb.dif_use = target_dif
+        return
+    else:
+        return target_ky, target_dif
+
+
+def set_perp_transport_coeffs_DM_old(ky_div: float = 1.0, dif_div: float = 1.0):
     """Set the perpendicular transport coefficients according to the value shared by David Moulton for MAST-U"""
     runid = 1
     grd.readgrid("gridue", runid)
@@ -694,11 +830,11 @@ def set_drifts_maxim(b0_scale: float = 10):
     bbb.lenplufac = 150
 
 
-def initial_short_run():
+def initial_short_run(dt: float = 1e-12):
     """Do an initial short run prior to calling rundt()"""
     bbb.restart = 1
     bbb.isbcwdt = 1
-    bbb.dtreal = 1e-12
+    bbb.dtreal = dt
     bbb.ftol = 1e-3
     bbb.icntnunk = 0
     bbb.itermx = 30
@@ -800,3 +936,55 @@ def three_zone_diff_coeffs(core: float = 10, sol: float = 1, div: float = 1):
             coeff_use[com.ixpt1[1] - 1 :, iy] = div
 
     return coeff_use
+
+
+def scan_variable(
+    var: str,
+    target: float,
+    savedir: str = "variable_scan",
+    num_steps: int = 10,
+    method: str = "linear",
+):
+    """Scan a variable from its initial value to the target using rundt
+
+    :param var: Name of variable
+    :param target: Target value(s)
+    :param index: Index of variable to change if array type
+    :param savedir: Directory to save intermediate steps, defaults to "variable_scan"
+    :param num_steps: Number of steps to take, defaults to 10
+    :param step_method: Step method, options: "linear", "geometric", "inverse", defaults to "linear"
+    """
+
+    # Generate the values over which to scan
+    initial_val = getattr(bbb, var)
+    if method == "linear":
+        vals = np.linspace(initial_val, target, num_steps)
+    elif method == "inverse":
+        vals = 1 / np.linspace(1 / initial_val, 1 / target, num_steps)
+
+    if not os.path.exists(savedir):
+        os.mkdir(savedir)
+
+    # Save the values in a text file for reference
+    percs = [100 * (i + 1) / (num_steps - 1) for i in range(len(vals) - 1)]
+    np.savetxt(
+        os.path.join(savedir, "scan_values.txt"),
+        np.array([percs, vals[1:]]).T,
+        header="Percentage\tValue",
+        fmt=["%.2f", "%.15e"],
+        delimiter="\t",
+    )
+
+    # Loop through each value calling rundt() and saving if successful
+    for i, val in enumerate(vals[1:]):
+        setattr(bbb, var, val)
+        bbb.dtreal = 1e-12
+        bbb.exmain()
+        rundt()
+        perc = 100 * (i + 1) / (num_steps - 1)
+        if bbb.iterm == 1:
+            print("======= PROGRESS = {:.2f}% =======".format(perc))
+            hdf5_save(os.path.join(savedir, "progress_{:.2f}pc.hdf5".format(perc)))
+        else:
+            print("======= RUNDT FAILED WITH PROGRESS = {:.2f}% =======".format(perc))
+            break
