@@ -198,7 +198,7 @@ def set_h_gas(fluid_neuts: bool = True):
         com.nhsp = 1
 
 
-def set_carbon_imps():
+def set_carbon_imps(fluid_neuts: bool = False, evolve_mom_eqs: bool = False):
     """Apply carbon impurity settings"""
     # Impurities
     bbb.isimpon = 6
@@ -209,7 +209,10 @@ def set_carbon_imps():
 
     bbb.isngon[1] = 1  # turns on impurity gas
     bbb.n0g[1] = 1.0e17
-    bbb.isupgon[1] = 0  # impurity gas is diffusive
+    if fluid_neuts:
+        bbb.isupgon[1] = 1  # impurity gas is diffusive
+    else:
+        bbb.isupgon[1] = 0  # impurity gas is diffusive
     bbb.recycp[1] = 1.0e-10  # recycling of impurity species
     bbb.recycw[1] = 1.0e-10  # recycling at wall, do not set =0!
     bbb.ngbackg[1] = 1.0e10  # background density for impurity gas
@@ -231,7 +234,8 @@ def set_carbon_imps():
     # =1 for fixed core density BC
     # =3 constant ni on core,
     #           total flux=curcore
-
+    if evolve_mom_eqs:
+        bbb.nusp_imp = 6
     bbb.recycc[1] = 0  # no core recycling of carbon gas
 
     bbb.curcore[com.nhsp : com.nhsp + 6] = 0.0
@@ -303,6 +307,7 @@ def set_transport_coeffs_DM(
     """
     runid = 1
     grd.readgrid("gridue", runid)
+    geometry = str(com.geometry[0])
 
     # Set/reset other transport coeffs before calculating D_y and K_y
     bbb.kye = 0  # 0.5		#chi_e for radial elec energy diffusion
@@ -348,19 +353,38 @@ def set_transport_coeffs_DM(
         d_use[:, iy] = d_radial[iy]
 
         # Set the values below the X-point
-        for iy in range(com.ny + 2):
-            if ky_div is None:
-                k_use[: com.ixpt1[0] + 1, iy] = k_radial[-1]
-                k_use[com.ixpt2[0] + 1 :, iy] = k_radial[-1]
-            else:
-                k_use[: com.ixpt1[0] + 1, iy] = ky_div
-                k_use[com.ixpt2[0] + 1 :, iy] = ky_div
-            if dif_div is None:
-                d_use[: com.ixpt1[0] + 1, iy] = d_radial[-1]
-                d_use[com.ixpt2[0] + 1 :, iy] = d_radial[-1]
-            else:
-                d_use[: com.ixpt1[0] + 1, iy] = dif_div
-                d_use[com.ixpt2[0] + 1 :, iy] = dif_div
+        if "snowflake15" in geometry:
+            for iy in range(com.ny + 2):
+                if ky_div is None:
+                    k_use[: com.ixpt1[0] + 1, iy] = k_radial[-1]
+                    k_use[com.ixpt2[1] + 1 :, iy] = k_radial[-1]
+                    k_use[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, iy] = k_radial[-1]
+                else:
+                    k_use[: com.ixpt1[0] + 1, iy] = ky_div
+                    k_use[com.ixpt2[1] + 1 :, iy] = ky_div
+                    k_use[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, iy] = ky_div
+                if dif_div is None:
+                    d_use[: com.ixpt1[0] + 1, iy] = d_radial[-1]
+                    d_use[com.ixpt2[1] + 1 :, iy] = d_radial[-1]
+                    d_use[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, iy] = d_radial[-1]
+                else:
+                    d_use[: com.ixpt1[0] + 1, iy] = dif_div
+                    d_use[com.ixpt2[1] + 1 :, iy] = dif_div
+                    d_use[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, iy] = dif_div
+        else:
+            for iy in range(com.ny + 2):
+                if ky_div is None:
+                    k_use[: com.ixpt1[0] + 1, iy] = k_radial[-1]
+                    k_use[com.ixpt2[0] + 1 :, iy] = k_radial[-1]
+                else:
+                    k_use[: com.ixpt1[0] + 1, iy] = ky_div
+                    k_use[com.ixpt2[0] + 1 :, iy] = ky_div
+                if dif_div is None:
+                    d_use[: com.ixpt1[0] + 1, iy] = d_radial[-1]
+                    d_use[com.ixpt2[0] + 1 :, iy] = d_radial[-1]
+                else:
+                    d_use[: com.ixpt1[0] + 1, iy] = dif_div
+                    d_use[com.ixpt2[0] + 1 :, iy] = dif_div
 
     # Assign calculated values in UEDGE
     target_ky = k_use

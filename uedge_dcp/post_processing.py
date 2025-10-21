@@ -210,8 +210,8 @@ def compute_fx(ixmp: int = None) -> np.ndarray:
         ixmp = bbb.ixmp
 
     # Divertor values
-    Bpol_div = com.bpol[com.nx, :, 0]
-    Btor_div = com.bphi[com.nx, :, 0]
+    Bpol_div = com.bpol[com.ixrb[0], :, 0]
+    Btor_div = com.bphi[com.ixrb[0], :, 0]
     B_div = np.sqrt(Bpol_div**2 + Btor_div**2)
 
     # Midplane values
@@ -226,7 +226,7 @@ def compute_fx(ixmp: int = None) -> np.ndarray:
     fx = (B_div / B_omp) * (1.0 / sin_theta)
 
     fx_simple = (com.bpol[ixmp, :, 0] * com.rm[ixmp, :, 0]) / (
-        com.bpol[com.nx, :, 0] * com.rm[com.nx, :, 0]
+        com.bpol[com.ixrb[0], :, 0] * com.rm[com.ixrb[0], :, 0]
     )
 
     return fx, fx_simple
@@ -267,12 +267,9 @@ def eich_exp_shahinul_odiv_final(
     :param save_prefix: Save location, defaults to 'lambdaq_result'
     :return: _description_
     """
+    yyc = com.yyc.reshape(-1)[:-1]
     if ixmp is None:
         ixmp = bbb.ixmp
-        yyc = com.yyc.reshape(-1)[:-1]
-    else:
-        yyc = get_yyc(ixmp=ixmp)
-        yyc = yyc.reshape(-1)[:-1]
 
     fx = calculate_flux_expansion(ixmp=ixmp)
     fx = np.round(fx)
@@ -281,27 +278,29 @@ def eich_exp_shahinul_odiv_final(
 
     # === Select which q_parallel to fit (OMP vs ODIV)
     bbb.plateflux()
-    # ppar = Pparallel()
     ppar = (
         bbb.feex + bbb.feix + 0.5 * bbb.mi[0] * bbb.up[:, :, 0] ** 2 * bbb.fnix[:, :, 0]
     )
     rrf = getrrf()
-    # rrf = com.sxnp
     q_para_omp = ppar[ixmp, :-1] / com.sx[ixmp, :-1] / rrf[ixmp, :-1]
-    q_para_odiv = ppar[com.nx, :-1] / com.sx[com.nx, :-1] / rrf[com.nx, :-1]
+    q_para_odiv = (
+        ppar[com.ixrb[0], :-1] / com.sx[com.ixrb[0], :-1] / rrf[com.ixrb[0], :-1]
+    )
     q_data = bbb.sdrrb + bbb.sdtrb
-    q_perp_odiv = q_data.reshape(-1)[:-1]
-    yyrb = com.yyrb.reshape(-1)[:-1]
+    if "snowflake" in str(com.geometry):
+        q_perp_odiv = q_data[:, 0].reshape(-1)[:-1]
+    else:
+        q_perp_odiv = q_data.reshape(-1)[:-1]
 
-    s_omp = com.yyrb[:-1]
+    # s_omp = com.yyrb[:-1]
     q_fit = q_para_omp if omp else q_para_odiv
 
-    s_omp = s_omp.flatten()
-    q_fit = q_fit.flatten()
+    # s_omp = s_omp.flatten()
+    # q_fit = q_fit.flatten()
 
-    interp_fun = interp1d(s_omp, q_fit, kind="cubic", fill_value="extrapolate")
-    s_interp = np.linspace(s_omp.min(), s_omp.max(), 300)
-    q_interp = interp_fun(s_interp)
+    # interp_fun = interp1d(s_omp, q_fit, kind="cubic", fill_value="extrapolate")
+    # s_interp = np.linspace(s_omp.min(), s_omp.max(), 300)
+    # q_interp = interp_fun(s_interp)
     iy_sep = com.iysptrx + 1
 
     # === Exponential Fit ===
@@ -335,6 +334,10 @@ def eich_exp_shahinul_odiv_final(
         return (q0 / 2) * np.exp(t0 - t1) * erfc(t2 - t3) + q_back
 
     # === Fit Eich Function ===
+    if "snowflake" in str(com.geometry):
+        yyrb = com.yyrb[:, 0].reshape(-1)[:-1]
+    else:
+        yyrb = com.yyrb.reshape(-1)[:-1]
     s_omp = yyrb
     q_omp = q_perp_odiv
     interp_fun = interp1d(s_omp, q_omp, kind="cubic", fill_value="extrapolate")
@@ -347,7 +350,7 @@ def eich_exp_shahinul_odiv_final(
 
     p0 = [0.003, 0.002, q0_guess, s0_guess]
     bounds = (
-        [0.0005, 0.0005, 1e5, s_fit.min() - 0.01],
+        [0.0005, 0.0005, 1e4, s_fit.min() - 0.01],
         [0.02, 0.02, 1e9, s_fit.max() + 0.01],
     )
 

@@ -12,6 +12,21 @@ from matplotlib.collections import PatchCollection
 from matplotlib.widgets import Slider
 
 
+def plot_diff_coeffs():
+    """Plot the radial profile of the diffusion coefficients at the outer midplane"""
+    fig, ax = plt.subplots(2, figsize=(4, 3))
+    r = com.rm[bbb.ixmp, :, 0] - com.rm[bbb.ixmp, com.iysptrx, 0]
+    ax[0].plot(r, bbb.kye_use[bbb.ixmp, :])
+    ax[1].plot(r, bbb.dif_use[bbb.ixmp, :, 0])
+    ax[0].grid()
+    ax[1].grid()
+    fig.subplots_adjust(hspace=0.05)
+    ax[1].set_xlabel("$R-R_{sep}$ [m]")
+    ax[0].set_ylabel("$\chi_{i,e}$ [m$^2$s$^{-1}$]")
+    ax[1].set_ylabel("$D_n$ [m$^2$s$^{-1}$]")
+    fig.tight_layout()
+
+
 def plot_q_plates():
     """Plot the total heat flux delivered to each target plate (snowflake geometry is assumed)"""
     bbb.plateflux()
@@ -22,17 +37,6 @@ def plot_q_plates():
         q2 = q_idata[0]
         r1 = com.yyrb.T[0]
         r2 = com.yylb.T[0]
-
-        # P1, P2, P3, P4 = pp.get_Q_target_proportions()
-        # Ptot = P1 + P2 + P3 + P4
-
-        # print("Power delivered to each target plate: ")
-        # print(
-        #     "SP1 (outer): {:.1f}".format(100 * P1 / Ptot)
-        #     + "%, "
-        #     + "SP2 (inner): {:.1f}".format(100 * P2 / Ptot)
-        #     + "% "
-        # )
 
         fig, ax = plt.subplots(2, 1)
 
