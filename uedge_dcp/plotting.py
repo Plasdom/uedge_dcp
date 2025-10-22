@@ -719,6 +719,77 @@ def streamplotvar(
     # )
 
 
+def plot_SOL_fits():
+    """Plot fits to the midplane electron temperature decay length, the midplane electron density decay length, and the target heat flux Eich fit"""
+    y = com.yyc[com.iysptrx1[0] :]
+    Te = bbb.te[bbb.ixmp, com.iysptrx1[0] :] / bbb.ev
+    ne = bbb.ne[bbb.ixmp, com.iysptrx1[0] :]
+    Te_fit, lambda_T_mm, ne_fit, lambda_n_mm = pp.midplane_exp_fit()
+
+    fig, ax = plt.subplots(3, sharex=False, figsize=(5, 5))
+    ax[0].plot(y, Te, linestyle="--", marker="x", color="black", label="UEDGE")
+    ax[0].plot(
+        y,
+        Te_fit,
+        linestyle="--",
+        color="red",
+        label=r"exp. fit: $\lambda_T$ = {:.2f} mm".format(lambda_T_mm),
+    )
+    ax[1].plot(y, ne, linestyle="--", marker="x", color="black")
+    ax[1].plot(
+        y,
+        ne_fit,
+        linestyle="--",
+        color="red",
+        label=r"exp. fit: $\lambda_n$ = {:.2f} mm".format(lambda_n_mm),
+    )
+    ax[0].grid()
+    ax[1].grid()
+    ax[0].legend()
+    ax[1].legend()
+
+    ax[0].set_xlabel("$r - r_{sep}$ [m]")
+    ax[1].set_xlabel("$r - r_{sep}$ [m]")
+    ax[0].set_ylabel("$T_e$ [eV]")
+    ax[1].set_ylabel("$n_e$ [m$^{-3}$]")
+
+    (
+        xq,
+        qparo,
+        qofit,
+        expfun,
+        omax,
+        lqo,
+        q_omp,
+        s_omp,
+        q_fit_full,
+        s_fit,
+        eich_lqo,
+    ) = pp.eich_exp_shahinul_odiv_final()
+    ax[2].plot(
+        s_omp,
+        1e-6 * q_omp,
+        marker="x",
+        color="black",
+        linestyle="--",
+    )
+    ax[2].plot(
+        s_fit,
+        1e-6 * q_fit_full,
+        color="red",
+        linestyle="--",
+        label=r"Eich fit: $\lambda_q$ = {:.2f} mm".format(eich_lqo),
+    )
+
+    ax[2].set_xlabel(r"$r - r_{sep}$ [m]")
+    ax[2].set_ylabel(r"$q_{\perp}$ [MWm$^{-2}$]")
+    ax[2].grid()
+    ax[2].legend()
+
+    fig.tight_layout()
+    # fig.subplots_adjust(hspace=0.15)
+
+
 def plotcell(i: list):
     """Highlight a specific cell
 

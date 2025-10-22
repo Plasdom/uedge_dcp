@@ -258,6 +258,39 @@ def calculate_flux_expansion(ixmp: int = None):
     return FX_theta
 
 
+def midplane_exp_fit():
+    """Fit exponetial decay curve to the outer midplane electron temperature and density profiles
+
+    :return: T_fit, lambda_T_mm, n_fit, lambda_n_mm
+    """
+    y = com.yyc[com.iysptrx1[0] :]
+    Te = bbb.te[bbb.ixmp, com.iysptrx1[0] :] / bbb.ev
+    ne = bbb.ne[bbb.ixmp, com.iysptrx1[0] :]
+
+    expfun = lambda x, A, lamda_inv: A * np.exp(-x * lamda_inv)
+    lambda_T_fit, _ = curve_fit(
+        expfun,
+        y,
+        Te,
+        p0=[np.max(Te), 100.0],
+        bounds=(0, np.inf),
+    )
+    lambda_T_mm = 1000 / lambda_T_fit[1]
+    print("lambda_T  = {:.2f} mm".format(lambda_T_mm))
+
+    lambda_n_fit, _ = curve_fit(
+        expfun,
+        y,
+        ne,
+        p0=[np.max(ne), 100.0],
+        bounds=(0, np.inf),
+    )
+    lambda_n_mm = 1000 / lambda_n_fit[1]
+    print("lambda_n  = {:.2f} mm".format(lambda_n_mm))
+
+    return expfun(y, *lambda_T_fit), lambda_T_mm, expfun(y, *lambda_n_fit), lambda_n_mm
+
+
 def eich_exp_shahinul_odiv_final(
     omp: bool = False, ixmp: int = None, save_prefix="lambdaq_result"
 ):
@@ -548,3 +581,35 @@ def get_yyc(
         )
 
     return y_mp
+
+
+def calculate_P_sol():
+    """Calculate the power crossing the separatrix
+
+    :return: P_sol in W
+    """
+    if com.nxpt == 1:
+        P_sol = np.sum(
+            bbb.feey[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx]
+            + bbb.feiy[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx]
+        )
+    else:
+        if "snowflake15" in str(com.geometry):
+            P_sol = np.sum(
+                bbb.feey[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx]
+                + bbb.feiy[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx]
+            )
+            P_sol += np.sum(
+                bbb.feey[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, com.iysptrx]
+                + bbb.feiy[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, com.iysptrx]
+            )
+        elif "snowflake75" in str(com.geometry):
+            P_sol = np.sum(
+                bbb.feey[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx1[0]]
+                + bbb.feiy[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx1[0]]
+            )
+
+    if com.isudsym == 1:
+        P_sol *= 2
+
+    return P_sol
