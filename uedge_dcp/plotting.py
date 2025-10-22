@@ -872,7 +872,9 @@ def plotrprof(
         plt.show()
 
 
-def plot_q_exp_fit(omp: bool = False, method: str = "eich", ixmp=None) -> None:
+def plot_q_exp_fit(
+    omp: bool = False, method: str = "eich", ixmp=None, savepath=None
+) -> None:
     """Plot an exponential fit of the parallel heat flux decay length projected to the outer midplane
 
     :param omp: Whether to use flux at outer midplane (if False, use flux at outer divertor)
@@ -939,3 +941,6 @@ def plot_q_exp_fit(omp: bool = False, method: str = "eich", ixmp=None) -> None:
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
+
+    if savepath is not None:
+        fig.savefig(savepath)

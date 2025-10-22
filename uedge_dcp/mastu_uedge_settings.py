@@ -4,6 +4,8 @@ import os
 from uedge.hdf5 import *
 from scipy.interpolate import interp1d
 import subprocess
+import pickle
+import yaml
 
 
 def set_geometry(
@@ -1020,3 +1022,50 @@ def scan_variable(
         else:
             print("======= RUNDT FAILED WITH PROGRESS = {:.2f}% =======".format(perc))
             break
+
+
+def generate_variable_scans(
+    variables: str | list[str],
+    initial: float | np.ndarray | list[np.ndarray],
+    final: float | np.ndarray | list[np.ndarray],
+    num_steps: int | list[int],
+    savepath: str | None = None,
+):
+    """Generate a dictionary of variables to scan over. This is intended to be used with Slurm array jobs
+
+    :param variables: List of variable names to scan over
+    :param initial: List of initial values of variables
+    :param final: List of final values of variables
+    :param num_steps: List of number of steps over which to scan each variable (from initial to final in linear spacing)
+    :param savepath: Savepath of the dictionary
+    :return: Dictionary containing variable names and values
+    """
+    scan_dict = {}
+    if isinstance(variables, str):
+        variables = [variables]
+        initial = [initial]
+        final = [final]
+        num_steps = [num_steps]
+    for i, v in enumerate(variables):
+        scan_dict[v] = {}
+        for step in range(num_steps[i]):
+            scan_dict[v][step] = initial[i] + step / (num_steps[i] - 1) * (
+                final[i] - initial[i]
+            )
+
+    if savepath is not None:
+        if savepath.endswith(".pkl"):
+            with open(savepath, "wb") as outfile:
+                pickle.dump(
+                    scan_dict,
+                    outfile,
+                )
+        elif savepath.endswith(".yml") or savepath.endswith(".yaml"):
+            with open(savepath, "w") as outfile:
+                yaml.dump(scan_dict, outfile, default_flow_style=False)
+        else:
+            raise Exception(
+                "savepath should end in either '.pkl' to save as a pickle file, or '.yml'/'yaml to save as a yaml file"
+            )
+    else:
+        return scan_dict
