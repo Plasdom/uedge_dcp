@@ -6,6 +6,28 @@ from scipy.interpolate import interp1d
 from scipy.special import erfc
 
 
+def integrate_var_pol(var: np.ndarray):
+    """Integrate an input variable along flux tubes
+
+    :param var: 2D UEDGE variable
+    :return: Integrated variable, [ny+2]
+    """
+    var_integrated = np.zeros(com.ny + 2)
+    for iy in range(com.ny + 2):
+        if iy <= com.iysptrx1[0]:
+            var_integrated[iy] = np.sum(var[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, iy])
+            if com.nxpt == 2:
+                var_integrated[iy] += np.sum(
+                    var[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, iy]
+                )
+        else:
+            var_integrated[iy] = np.sum(var[:, iy])
+            if com.nxpt == 2:
+                var_integrated[iy] += np.sum(var[:, iy])
+
+    return var_integrated
+
+
 def mask_guard_cells(variable: np.ndarray):
     """Set all guard cell values to nans
 
@@ -292,7 +314,7 @@ def midplane_exp_fit():
 
 
 def eich_exp_shahinul_odiv_final(
-    omp: bool = False, ixmp: int = None, save_prefix="lambdaq_result"
+    omp: bool = False, ixmp: int = None, save_prefix="lambdaq_result", SP=1
 ):
     """Written by Shahinul Islam
 
@@ -307,23 +329,31 @@ def eich_exp_shahinul_odiv_final(
     fx = calculate_flux_expansion(ixmp=ixmp)
     fx = np.round(fx)
 
-    # print("fx", fx)
-
     # === Select which q_parallel to fit (OMP vs ODIV)
     bbb.plateflux()
     ppar = (
         bbb.feex + bbb.feix + 0.5 * bbb.mi[0] * bbb.up[:, :, 0] ** 2 * bbb.fnix[:, :, 0]
     )
     rrf = getrrf()
+    ix_SP = com.ixrb[0]
     q_para_omp = ppar[ixmp, :-1] / com.sx[ixmp, :-1] / rrf[ixmp, :-1]
-    q_para_odiv = (
-        ppar[com.ixrb[0], :-1] / com.sx[com.ixrb[0], :-1] / rrf[com.ixrb[0], :-1]
-    )
+    q_para_odiv = ppar[ix_SP, :-1] / com.sx[ix_SP, :-1] / rrf[ix_SP, :-1]
     q_data = bbb.sdrrb + bbb.sdtrb
+    q_ldata = bbb.sdrlb + bbb.sdtlb
     if "snowflake" in str(com.geometry):
-        q_perp_odiv = q_data[:, 0].reshape(-1)[:-1]
+        if SP == 1:
+            q_perp_odiv = q_data[:, 0].reshape(-1)[:-1]
+        elif SP == 2:
+            q_perp_odiv = q_ldata[:, 1].reshape(-1)[:-1]
+        elif SP == 3:
+            q_perp_odiv = q_data[:, 1].reshape(-1)[:-1]
+        elif SP == 4:
+            q_perp_odiv = q_ldata[:, 0].reshape(-1)[:-1]
     else:
-        q_perp_odiv = q_data.reshape(-1)[:-1]
+        if SP == 1:
+            q_perp_odiv = q_data.reshape(-1)[:-1]
+        elif SP == 2:
+            q_perp_odiv = q_ldata.reshape(-1)[:-1]
 
     # s_omp = com.yyrb[:-1]
     q_fit = q_para_omp if omp else q_para_odiv
@@ -368,9 +398,19 @@ def eich_exp_shahinul_odiv_final(
 
     # === Fit Eich Function ===
     if "snowflake" in str(com.geometry):
-        yyrb = com.yyrb[:, 0].reshape(-1)[:-1]
+        if SP == 1:
+            yyrb = com.yyrb[:, 0].reshape(-1)[:-1]
+        elif SP == 2:
+            yyrb = com.yylb[:, 1].reshape(-1)[:-1]
+        elif SP == 3:
+            yyrb = com.yyrb[:, 1].reshape(-1)[:-1]
+        elif SP == 4:
+            yyrb = com.yylb[:, 0].reshape(-1)[:-1]
     else:
-        yyrb = com.yyrb.reshape(-1)[:-1]
+        if SP == 1:
+            yyrb = com.yyrb.reshape(-1)[:-1]
+        elif SP == 2:
+            yyrb = com.yylb.reshape(-1)[:-1]
     s_omp = yyrb
     q_omp = q_perp_odiv
     interp_fun = interp1d(s_omp, q_omp, kind="cubic", fill_value="extrapolate")
@@ -508,7 +548,11 @@ def q_exp_fit_old(omp: bool = False, ixmp=None):
 
 
 def get_midplane_vals(
-    f: np.ndarray, rm: np.ndarray = None, zm: np.ndarray = None, ixmp: int = None
+    f: np.ndarray,
+    rm: np.ndarray = None,
+    zm: np.ndarray = None,
+    ixmp: int = None,
+    ixmp_is_above_mp: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Find the values of an array at the midplane
 
@@ -516,6 +560,7 @@ def get_midplane_vals(
     :param rm: R grid coords, defaults to None
     :param zm: Z grid coords, defaults to None
     :param ixmp: Midplane index, defaults to None
+    :param ixmp_is_above_mp: Whether cell ixmp is above the midplane or not, defaults to False
     :return: x_mp (midplane radial coordinates), f_mp (midplane radial profile)
     """
     if rm is None:
@@ -523,12 +568,22 @@ def get_midplane_vals(
         zm = com.zm
     if ixmp is None:
         ixmp = bbb.ixmp
-    x_mp = 0.5 * (rm[ixmp, :, 1] + rm[ixmp, :, 3])
-    y_mp = 0.5 * (zm[ixmp, :, 1] + zm[ixmp, :, 3])
-    x_1 = rm[ixmp - 1, :, 0]
-    y_1 = zm[ixmp - 1, :, 0]
-    x_2 = rm[ixmp, :, 0]
-    y_2 = zm[ixmp, :, 0]
+    if ixmp_is_above_mp:
+        x_mp = 0.5 * (rm[ixmp, :, 2] + rm[ixmp, :, 4])
+        y_mp = 0.5 * (zm[ixmp, :, 4] + zm[ixmp, :, 4])
+    else:
+        x_mp = 0.5 * (rm[ixmp, :, 1] + rm[ixmp, :, 3])
+        y_mp = 0.5 * (zm[ixmp, :, 1] + zm[ixmp, :, 3])
+    if ixmp_is_above_mp:
+        x_1 = rm[ixmp, :, 0]
+        y_1 = zm[ixmp, :, 0]
+        x_2 = rm[ixmp + 1, :, 0]
+        y_2 = zm[ixmp + 1, :, 0]
+    else:
+        x_1 = rm[ixmp - 1, :, 0]
+        y_1 = zm[ixmp - 1, :, 0]
+        x_2 = rm[ixmp, :, 0]
+        y_2 = zm[ixmp, :, 0]
     d_1 = np.sqrt((x_1 - x_mp) ** 2 + (y_1 - y_mp) ** 2)
     d_2 = np.sqrt((x_2 - x_mp) ** 2 + (y_2 - y_mp) ** 2)
     f_mp = (d_2 * f[ixmp - 1, :] + d_1 * f[ixmp, :]) / (d_1 + d_2)

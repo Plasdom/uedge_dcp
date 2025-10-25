@@ -854,7 +854,7 @@ def set_drifts_maxim(b0_scale: float = 10):
     bbb.iphibcwo = 0  # same for outer wall
     bbb.isutcore = 2  # =1, set dut/dy=0 on iy=0 (if iphibcc=0)
     # =0, toroidal angular momentum=lzcore on iy=0 (iphibcc=0)
-    bbb.isnewpot = 1.0
+    bbb.isnewpot = 1
     bbb.rnewpot = 1.0
     bbb.cfnus_i = 1.0
     bbb.cfnus_e = 1.0  # include collisionality in drift effects
@@ -862,6 +862,7 @@ def set_drifts_maxim(b0_scale: float = 10):
     bbb.lfililut = 200
     bbb.lenpfac = 150
     bbb.lenplufac = 150
+    bbb.allocate()
 
 
 def initial_short_run(dt: float = 1e-12):
@@ -975,6 +976,7 @@ def three_zone_diff_coeffs(core: float = 10, sol: float = 1, div: float = 1):
 def scan_variable(
     var: str,
     target: float,
+    index: int | None = None,
     savedir: str = "variable_scan",
     num_steps: int = 10,
     method: str = "linear",
@@ -991,6 +993,8 @@ def scan_variable(
 
     # Generate the values over which to scan
     initial_val = getattr(bbb, var)
+    if index is not None:
+        initial_val = initial_val[index]
     if method == "linear":
         vals = np.linspace(initial_val, target, num_steps)
     elif method == "inverse":
@@ -1000,14 +1004,17 @@ def scan_variable(
         os.mkdir(savedir)
 
     # Save the values in a text file for reference
-    percs = [100 * (i + 1) / (num_steps - 1) for i in range(len(vals) - 1)]
+    percs = [100 * i / (num_steps - 1) for i in range(len(vals))]
     np.savetxt(
         os.path.join(savedir, "scan_values.txt"),
-        np.array([percs, vals[1:]]).T,
+        np.array([percs, vals]).T,
         header="Percentage\tValue",
         fmt=["%.2f", "%.15e"],
         delimiter="\t",
     )
+
+    # Save the initial step
+    hdf5_save(os.path.join(savedir, "progress_{:.2f}pc.hdf5".format(0.0)))
 
     # Loop through each value calling rundt() and saving if successful
     for i, val in enumerate(vals[1:]):

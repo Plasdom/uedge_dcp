@@ -12,6 +12,142 @@ from matplotlib.collections import PatchCollection
 from matplotlib.widgets import Slider
 
 
+def plot_radial_fluxes():
+    """Plot the poloidally-integrated particle and energy fluxes in each radial cell in the core and SOL (i.e. PFR is ignored)"""
+
+    # Compute particle fluxes
+    tot_fni = pp.integrate_var_pol(bbb.fniy[:, :, 0])
+    tot_fni_diff = pp.integrate_var_pol((bbb.vydd[:, :, 0] * bbb.ni[:, :, 0] * com.sy))
+    tot_fni_gradB = pp.integrate_var_pol(bbb.cfyef * bbb.fniycb[:, :, 0])
+    tot_fni_ExB = pp.integrate_var_pol((bbb.vyce[:, :, 0] * bbb.ni[:, :, 0]) * com.sy)
+
+    # Compute energy fluxes
+    # tot_fee = pp.integrate_var_pol(bbb.feey)
+    # TODO: Use vey here instead of fniy; look at how floye calculated in bbb
+    tot_fee = pp.integrate_var_pol(
+        (5 / 2) * bbb.fniy[:, :, 0] * bbb.ti[:, :]
+        - (bbb.kyi_use[:, :] * bbb.gtiy[:, :] * bbb.ni[:, :, 0]) * com.sy[:, :]
+    )
+    # tot_fei = pp.integrate_var_pol(bbb.feiy)
+    # TODO: Understand discrepancies here
+    tot_fei = pp.integrate_var_pol(
+        (5 / 2) * bbb.fniy[:, :, 0] * bbb.ti[:, :]
+        - (bbb.kyi_use[:, :] * bbb.gtiy[:, :] * bbb.ni[:, :, 0]) * com.sy[:, :]
+    )
+
+    tot_fei_ExB = pp.integrate_var_pol(
+        (
+            ((5 / 2) * bbb.vyce[:, :, 0] * bbb.ni[:, :, 0] * bbb.ti)
+            + (
+                (1 / 2)
+                * bbb.mp
+                * bbb.minu[0]
+                * bbb.ni[:, :, 0]
+                * (bbb.vyce[:, :, 0] ** 2)
+            )
+        )
+        * com.sy
+    )
+    tot_fee_ExB = pp.integrate_var_pol(
+        ((5 / 2) * bbb.vyce[:, :, 0] * bbb.ne * bbb.te) * com.sy
+    )
+    tot_fei_gradB = pp.integrate_var_pol(
+        bbb.cfyef
+        * (
+            ((5 / 2) * bbb.vycb[:, :, 0] * bbb.ni[:, :, 0] * bbb.ti)
+            # ((5 / 2) * bbb.fniycb[:, :, 0] * bbb.ti)
+            + (
+                (1 / 2)
+                * bbb.mp
+                * bbb.minu[0]
+                * bbb.ni[:, :, 0]
+                * (bbb.vycb[:, :, 0] ** 2)
+            )
+        )
+        * com.sy
+    )
+    tot_fee_gradB = pp.integrate_var_pol(
+        bbb.cfyef * ((5 / 2) * bbb.veycb * bbb.ne * bbb.te) * com.sy
+    )
+    tot_fei_diff = pp.integrate_var_pol(
+        (
+            ((5 / 2) * bbb.vydd[:, :, 0] * bbb.ni[:, :, 0] * bbb.ti)
+            + (
+                (1 / 2)
+                * bbb.mp
+                * bbb.minu[0]
+                * bbb.ni[:, :, 0]
+                * (bbb.vydd[:, :, 0] ** 2)
+            )
+            - (bbb.kyi_use * bbb.gtiy * bbb.ni[:, :, 0])
+        )
+        * com.sy
+    )
+    tot_fee_diff = pp.integrate_var_pol(
+        (
+            ((5 / 2) * bbb.vydd[:, :, 0] * bbb.ne * bbb.te)
+            - (bbb.kye_use * bbb.gtey * bbb.ne)
+        )
+        * com.sy
+    )
+
+    # Plot
+    fig, ax = plt.subplots(2, figsize=(5.5, 4.5))
+
+    ax[0].plot(com.yyc, tot_fni, color="red", label="UEDGE")
+    ax[0].plot(com.yyc, tot_fni_gradB, label=r"$\nabla B$")
+    ax[0].plot(com.yyc, tot_fni_ExB, label=r"$E \times B$")
+    ax[0].plot(com.yyc, tot_fni_diff, label=r"Diffusive")
+    ax[0].plot(
+        com.yyc,
+        tot_fni_gradB + tot_fni_ExB + tot_fni_diff,
+        label=r"Total",
+        linestyle="--",
+        color="black",
+    )
+    ax[0].grid()
+    ax[0].set_ylabel(r"$\Gamma_{i}$ [s$^{-1}$]")
+    ax[0].legend()
+
+    ax[1].plot(com.yyc, 1e-6 * (tot_fee + tot_fei), color="red", label="UEDGE")
+    # ax[1].plot(com.yyc, 1e-6 * tot_fei, label="UEDGE (ions)")
+    # ax[1].plot(com.yyc, 1e-6 * tot_fee, label="UEDGE (electrons)")
+
+    ax[1].plot(com.yyc, 1e-6 * (tot_fee_gradB + tot_fei_gradB), label=r"$\nabla B$")
+    # ax[1].plot(com.yyc, 1e-6 * tot_fei_gradB, label=r"$\nabla B$ (ions)")
+    # ax[1].plot(com.yyc, 1e-6 * tot_fee_gradB, label=r"$\nabla B$ (electron)")
+
+    ax[1].plot(com.yyc, 1e-6 * (tot_fei_ExB + tot_fee_ExB), label="ExB")
+    # ax[1].plot(com.yyc, 1e-6 * tot_fei_ExB, label="ExB (ions)")
+    # ax[1].plot(com.yyc, 1e-6 * tot_fee_ExB, label="ExB (electrons)")
+
+    ax[1].plot(com.yyc, 1e-6 * (tot_fee_diff + tot_fei_diff), label="Diffusive")
+    # ax[1].plot(com.yyc, 1e-6 * tot_fei_diff, label="Diffusive (ions)")
+    # ax[1].plot(com.yyc, 1e-6 * tot_fee_diff, label="Diffusive (electrons)")
+
+    ax[1].plot(
+        com.yyc,
+        1e-6
+        * (
+            tot_fei_gradB
+            + tot_fee_gradB
+            + tot_fei_ExB
+            + tot_fee_ExB
+            + tot_fei_diff
+            + tot_fee_diff
+        ),
+        label="Total",
+        color="black",
+        linestyle="--",
+    )
+    ax[1].set_ylabel(r"$q^{conv}_{r}$ [MW]")
+    ax[1].set_xlabel("$r - r_{sep}$")
+    ax[1].grid()
+    # ax[1].legend()
+
+    fig.subplots_adjust(hspace=0.05, left=0.15)
+
+
 def plot_diff_coeffs():
     """Plot the radial profile of the diffusion coefficients at the outer midplane"""
     fig, ax = plt.subplots(2, figsize=(4, 3))
@@ -51,12 +187,12 @@ def plot_q_plates():
 
     elif com.nxpt == 2:
         q1 = q_odata[0]
-        q2 = q_odata[1]
-        q3 = q_idata[1]
+        q2 = q_idata[1]
+        q3 = q_odata[1]
         q4 = q_idata[0]
         r1 = com.yyrb.T[0]
-        r2 = com.yyrb.T[1]
-        r3 = com.yylb.T[1]
+        r2 = com.yylb.T[1]
+        r3 = com.yyrb.T[1]
         r4 = com.yylb.T[0]
 
         P1, P2, P3, P4 = pp.get_Q_target_proportions()
@@ -944,12 +1080,17 @@ def plotrprof(
 
 
 def plot_q_exp_fit(
-    omp: bool = False, method: str = "eich", ixmp=None, savepath=None
+    omp: bool = False,
+    method: str = "eich",
+    ixmp: int = None,
+    savepath=None,
+    SP: int = 1,
 ) -> None:
     """Plot an exponential fit of the parallel heat flux decay length projected to the outer midplane
 
     :param omp: Whether to use flux at outer midplane (if False, use flux at outer divertor)
     :param method: 'eich' or 'exp'
+    :param SP: Which strike point on which to carry out fit, defaults to 1 (uppermost SP on low field side)
     """
     # xq, qparo, qofit, expfun, lqo, omax = pp.q_exp_fit_old(omp, ixmp)
 
@@ -965,7 +1106,7 @@ def plot_q_exp_fit(
         q_fit_full,
         s_fit,
         eich_lqo,
-    ) = pp.eich_exp_shahinul_odiv_final(omp, ixmp)
+    ) = pp.eich_exp_shahinul_odiv_final(omp, ixmp, SP=SP)
 
     fig, ax = plt.subplots(1, figsize=(4.5, 2.75))
     # c0, c1 = "blue", "green"
