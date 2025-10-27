@@ -12,138 +12,170 @@ from matplotlib.collections import PatchCollection
 from matplotlib.widgets import Slider
 
 
-def plot_radial_fluxes():
-    """Plot the poloidally-integrated particle and energy fluxes in each radial cell in the core and SOL (i.e. PFR is ignored)"""
+def plot_radial_fluxes(ix: int | None = None):
+    """Plot the poloidally-integrated particle and energy fluxes in each radial cell in the core and SOL (i.e. PFR is ignored)
+
+    :param ix: Poloidal cell index, defaults to None (in which case the fluxes will be integrated poloidally over all cells connected radially to the core)
+    """
+    if ix is None:
+        # Consider only cells connected radially to the core
+        ix_mask = com.isixcore == 1
+    else:
+        # Consider only the requested cell
+        ix_mask = np.zeros(com.nx + 2, dtype=bool)
+        ix_mask[ix] = True
+
+    # Pre-calculate quantities with upwind scheme and on cell faces
+    niy_upwind = np.where(bbb.vy[:, :, 0] > 0, bbb.niy0[:, :, 0], bbb.niy1[:, :, 0])
+    ney_upwind = np.where(bbb.vy[:, :, 0] > 0, bbb.ney0[:, :], bbb.ney1[:, :])
+    tey_upwind = np.where(bbb.vy[:, :, 0] > 0, bbb.tey0[:, :], bbb.tey1[:, :])
+    tiy_upwind = np.where(bbb.vy[:, :, 0] > 0, bbb.tiy0[:, :], bbb.tiy1[:, :])
+    ney_face = 0.5 * (bbb.ney0[:, :] + bbb.ney1[:, :])
+    niy_face = 0.5 * (bbb.niy0[:, :, 0] + bbb.niy1[:, :, 0])
+    tey_face = 0.5 * (bbb.tey0[:, :] + bbb.tey1[:, :])
+    tiy_face = 0.5 * (bbb.tiy0[:, :] + bbb.tiy1[:, :])
+    ion_energy_upwind = (
+        (5 / 2) * tiy_upwind
+        + (1 / 2) * bbb.mp * bbb.minu[0] * (bbb.up[:, :, 0] + bbb.vy[:, :, 0]) ** 2
+    ) * niy_upwind
+    electron_energy_upwind = (5 / 2) * tey_upwind * ney_upwind
+    ion_energy_face = (
+        (5 / 2) * tiy_face
+        + (1 / 2) * bbb.mp * bbb.minu[0] * (bbb.up[:, :, 0] + bbb.vy[:, :, 0]) ** 2
+    ) * niy_face
+    electron_energy_face = (5 / 2) * tey_face * ney_face
 
     # Compute particle fluxes
-    tot_fni = pp.integrate_var_pol(bbb.fniy[:, :, 0])
-    tot_fni_diff = pp.integrate_var_pol((bbb.vydd[:, :, 0] * bbb.ni[:, :, 0] * com.sy))
-    tot_fni_gradB = pp.integrate_var_pol(bbb.cfyef * bbb.fniycb[:, :, 0])
-    tot_fni_ExB = pp.integrate_var_pol((bbb.vyce[:, :, 0] * bbb.ni[:, :, 0]) * com.sy)
-
-    # Compute energy fluxes
-    # tot_fee = pp.integrate_var_pol(bbb.feey)
-    # TODO: Use vey here instead of fniy; look at how floye calculated in bbb
-    tot_fee = pp.integrate_var_pol(
-        (5 / 2) * bbb.fniy[:, :, 0] * bbb.ti[:, :]
-        - (bbb.kyi_use[:, :] * bbb.gtiy[:, :] * bbb.ni[:, :, 0]) * com.sy[:, :]
+    tot_fni = np.sum(bbb.fniy[ix_mask, :, 0], axis=0)
+    tot_fni_diff = np.sum(
+        (bbb.vydd[ix_mask, :, 0] * niy_upwind[ix_mask, :] * com.sy[ix_mask, :]), axis=0
     )
-    # tot_fei = pp.integrate_var_pol(bbb.feiy)
-    # TODO: Understand discrepancies here
-    tot_fei = pp.integrate_var_pol(
-        (5 / 2) * bbb.fniy[:, :, 0] * bbb.ti[:, :]
-        - (bbb.kyi_use[:, :] * bbb.gtiy[:, :] * bbb.ni[:, :, 0]) * com.sy[:, :]
+    tot_fni_gradB = np.sum(bbb.cfybf * bbb.fniycb[ix_mask, :, 0], axis=0)
+    tot_fni_ExB = np.sum(
+        (bbb.cfyef * bbb.vyce[ix_mask, :, 0] * niy_upwind[ix_mask, :])
+        * com.sy[ix_mask, :],
+        axis=0,
     )
 
-    tot_fei_ExB = pp.integrate_var_pol(
+    # Compute total energy fluxes
+    tot_fee = np.sum(bbb.feey[ix_mask, :], axis=0)
+    tot_fei = np.sum(bbb.feiy[ix_mask, :], axis=0)
+
+    # Compute ExB energy fluxes
+    fei_ExB = np.sum(
+        ion_energy_upwind[ix_mask, :]
+        * bbb.cfyef
+        * bbb.vyce[ix_mask, :, 0]
+        * com.sy[ix_mask, :],
+        axis=0,
+    )
+    fee_ExB = np.sum(
+        electron_energy_upwind[ix_mask, :]
+        * bbb.cfyef
+        * bbb.vyce[ix_mask, :, 0]
+        * com.sy[ix_mask, :],
+        axis=0,
+    )
+
+    # Compute grad B energy fluxes
+    fei_gradB = np.sum(
+        ion_energy_upwind[ix_mask, :]
+        * bbb.cfybf
+        * bbb.vycb[ix_mask, :, 0]
+        * com.sy[ix_mask, :],
+        axis=0,
+    )
+    fee_gradB = np.sum(
+        electron_energy_upwind[ix_mask, :]
+        * bbb.cfybf
+        * bbb.vycb[ix_mask, :, 0]
+        * com.sy[ix_mask, :],
+        axis=0,
+    )
+
+    # Compute diffusive energy fluxes (particle + thermal)
+    fei_diff = np.sum(
         (
-            ((5 / 2) * bbb.vyce[:, :, 0] * bbb.ni[:, :, 0] * bbb.ti)
-            + (
-                (1 / 2)
-                * bbb.mp
-                * bbb.minu[0]
-                * bbb.ni[:, :, 0]
-                * (bbb.vyce[:, :, 0] ** 2)
-            )
-        )
-        * com.sy
+            ion_energy_upwind[ix_mask, :] * bbb.vydd[ix_mask, :, 0] * com.sy[ix_mask, :]
+            - bbb.kyi_use[ix_mask, :]
+            * bbb.gtiy[ix_mask, :]
+            * niy_upwind[ix_mask, :]
+            * com.sy[ix_mask, :]
+        ),
+        axis=0,
     )
-    tot_fee_ExB = pp.integrate_var_pol(
-        ((5 / 2) * bbb.vyce[:, :, 0] * bbb.ne * bbb.te) * com.sy
-    )
-    tot_fei_gradB = pp.integrate_var_pol(
-        bbb.cfyef
-        * (
-            ((5 / 2) * bbb.vycb[:, :, 0] * bbb.ni[:, :, 0] * bbb.ti)
-            # ((5 / 2) * bbb.fniycb[:, :, 0] * bbb.ti)
-            + (
-                (1 / 2)
-                * bbb.mp
-                * bbb.minu[0]
-                * bbb.ni[:, :, 0]
-                * (bbb.vycb[:, :, 0] ** 2)
-            )
-        )
-        * com.sy
-    )
-    tot_fee_gradB = pp.integrate_var_pol(
-        bbb.cfyef * ((5 / 2) * bbb.veycb * bbb.ne * bbb.te) * com.sy
-    )
-    tot_fei_diff = pp.integrate_var_pol(
+    fee_diff = np.sum(
         (
-            ((5 / 2) * bbb.vydd[:, :, 0] * bbb.ni[:, :, 0] * bbb.ti)
-            + (
-                (1 / 2)
-                * bbb.mp
-                * bbb.minu[0]
-                * bbb.ni[:, :, 0]
-                * (bbb.vydd[:, :, 0] ** 2)
-            )
-            - (bbb.kyi_use * bbb.gtiy * bbb.ni[:, :, 0])
-        )
-        * com.sy
+            electron_energy_upwind[ix_mask, :]
+            * bbb.vydd[ix_mask, :, 0]
+            * com.sy[ix_mask, :]
+            - bbb.kye_use[ix_mask, :]
+            * bbb.gtey[ix_mask, :]
+            * ney_upwind[ix_mask, :]
+            * com.sy[ix_mask, :]
+        ),
+        axis=0,
     )
-    tot_fee_diff = pp.integrate_var_pol(
-        (
-            ((5 / 2) * bbb.vydd[:, :, 0] * bbb.ne * bbb.te)
-            - (bbb.kye_use * bbb.gtey * bbb.ne)
-        )
-        * com.sy
+
+    # Compute current-driven electron energy flux
+    fee_cur = np.sum(
+        -electron_energy_face[ix_mask, :]
+        * bbb.fqy[ix_mask, :]
+        / (com.sy[ix_mask, :] * ney_face[ix_mask, :] * bbb.qe)
+        * com.sy[ix_mask, :],
+        axis=0,
     )
 
     # Plot
-    fig, ax = plt.subplots(2, figsize=(5.5, 4.5))
+    fig, ax = plt.subplots(3, figsize=(5.5, 7.5), sharex=True)
 
-    ax[0].plot(com.yyc, tot_fni, color="red", label="UEDGE")
-    ax[0].plot(com.yyc, tot_fni_gradB, label=r"$\nabla B$")
-    ax[0].plot(com.yyc, tot_fni_ExB, label=r"$E \times B$")
-    ax[0].plot(com.yyc, tot_fni_diff, label=r"Diffusive")
+    ax[0].plot(com.yyc, tot_fni, label="UEDGE", color="black")
+    ax[0].plot(com.yyc, tot_fni_diff, label=r"Diffusive", color="green")
+    ax[0].plot(com.yyc, tot_fni_gradB, label=r"$\nabla B$", color="blue")
+    ax[0].plot(com.yyc, tot_fni_ExB, label=r"$E \times B$", color="red")
     ax[0].plot(
         com.yyc,
         tot_fni_gradB + tot_fni_ExB + tot_fni_diff,
         label=r"Total",
         linestyle="--",
-        color="black",
+        color="gray",
     )
     ax[0].grid()
-    ax[0].set_ylabel(r"$\Gamma_{i}$ [s$^{-1}$]")
+    ax[0].set_ylabel(r"$\Gamma^{i}_{y}$ [s$^{-1}$]")
     ax[0].legend()
 
-    ax[1].plot(com.yyc, 1e-6 * (tot_fee + tot_fei), color="red", label="UEDGE")
-    # ax[1].plot(com.yyc, 1e-6 * tot_fei, label="UEDGE (ions)")
-    # ax[1].plot(com.yyc, 1e-6 * tot_fee, label="UEDGE (electrons)")
-
-    ax[1].plot(com.yyc, 1e-6 * (tot_fee_gradB + tot_fei_gradB), label=r"$\nabla B$")
-    # ax[1].plot(com.yyc, 1e-6 * tot_fei_gradB, label=r"$\nabla B$ (ions)")
-    # ax[1].plot(com.yyc, 1e-6 * tot_fee_gradB, label=r"$\nabla B$ (electron)")
-
-    ax[1].plot(com.yyc, 1e-6 * (tot_fei_ExB + tot_fee_ExB), label="ExB")
-    # ax[1].plot(com.yyc, 1e-6 * tot_fei_ExB, label="ExB (ions)")
-    # ax[1].plot(com.yyc, 1e-6 * tot_fee_ExB, label="ExB (electrons)")
-
-    ax[1].plot(com.yyc, 1e-6 * (tot_fee_diff + tot_fei_diff), label="Diffusive")
-    # ax[1].plot(com.yyc, 1e-6 * tot_fei_diff, label="Diffusive (ions)")
-    # ax[1].plot(com.yyc, 1e-6 * tot_fee_diff, label="Diffusive (electrons)")
-
+    ax[1].plot(com.yyc, 1e-6 * tot_fei, label="UEDGE", color="black")
+    ax[1].plot(com.yyc, 1e-6 * fei_diff, label="Diffusive", color="green")
+    ax[1].plot(com.yyc, 1e-6 * fei_gradB, label=r"$\nabla B$", color="blue")
+    ax[1].plot(com.yyc, 1e-6 * fei_ExB, label="ExB", color="red")
     ax[1].plot(
         com.yyc,
-        1e-6
-        * (
-            tot_fei_gradB
-            + tot_fee_gradB
-            + tot_fei_ExB
-            + tot_fee_ExB
-            + tot_fei_diff
-            + tot_fee_diff
-        ),
+        1e-6 * (fei_gradB + fei_ExB + fei_diff),
         label="Total",
-        color="black",
+        color="gray",
         linestyle="--",
     )
-    ax[1].set_ylabel(r"$q^{conv}_{r}$ [MW]")
+    ax[1].set_ylabel(r"$q^{i}_{y}$ [MW]")
     ax[1].set_xlabel("$r - r_{sep}$")
     ax[1].grid()
-    # ax[1].legend()
+    ax[1].legend()
+
+    ax[2].plot(com.yyc, 1e-6 * tot_fee, label="UEDGE", color="black")
+    ax[2].plot(com.yyc, 1e-6 * fee_diff, label="Diffusive", color="green")
+    ax[2].plot(com.yyc, 1e-6 * fee_gradB, label=r"$\nabla B$", color="blue")
+    ax[2].plot(com.yyc, 1e-6 * fee_ExB, label="ExB", color="red")
+    ax[2].plot(com.yyc, 1e-6 * fee_cur, label="Current-driven", color="purple")
+    ax[2].plot(
+        com.yyc,
+        1e-6 * (fee_gradB + fee_ExB + fee_diff + fee_cur),
+        label="Total",
+        color="gray",
+        linestyle="--",
+    )
+    ax[2].set_ylabel(r"$q^{e}_{y}$ [MW]")
+    ax[2].set_xlabel("$r - r_{sep}$")
+    ax[2].grid()
+    ax[2].legend()
 
     fig.subplots_adjust(hspace=0.05, left=0.15)
 

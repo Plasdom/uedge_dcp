@@ -176,6 +176,39 @@ def set_solver():
     bbb.svrpkg = "nksol"  # Newton solver using Krylov method
     bbb.premeth = "ilut"  # "banded"	#Solution method for precond. Jacobian matrix
 
+    # bbb.mfnksol = 3  # default is -3
+    # bbb.epscon1 = 0.005  # default is 0.1
+    # bbb.iscolnorm = 3  # default, OK
+    # bbb.ftol = 1.0e-9  # default is 1.e-10
+    # bbb.rlx = 0.4  # default, OK
+    # bbb.delpy = 1.0e-9  # default is 1.e-7
+    # bbb.del2nksol = 1.0e-14  # default, OK
+    # bbb.premeth = "ilut"  # default is "ilut"
+    # bbb.lenpfac = 60  # default, OK
+    # bbb.lfililut = 100  # default is 50
+    # bbb.ismmaxuc = 1  # default, OK
+    # bbb.mmaxu = 80  # default is 25
+
+    # bbb.svrpkg = "nksol"
+    # bbb.premeth = "ilut"
+    # bbb.runtim = 1.0e-07  # convergence for VODPK
+    # bbb.rwmin = 1.0e-11  # convergence for NEWTON
+    # bbb.ftol = 1.0e-8  # convergence for NKSOL
+    # bbb.iscolnorm = 3
+    # bbb.mfnksol = 3
+    # bbb.scrit = 1.0e-3
+    # bbb.nmaxnewt = 20
+    # bbb.itermx = 30
+    # # Jacobian increments --
+    # bbb.xrinc = 2
+    # bbb.xlinc = 3
+    # bbb.yinc = 2
+    # bbb.delpy = 1.0e-07
+    # # vodpk parameters --
+    # bbb.jacflg = 1
+    # bbb.jpre = 1
+    # bbb.rtolv = 1.0e-4
+
 
 def set_h_gas(fluid_neuts: bool = True):
     """Apply neutral hydrogen settings"""
@@ -770,7 +803,7 @@ def set_initial_conditions():
     bbb.isbcwdt = 1
 
 
-def set_drifts(b0_scale: float = 65.0, diamagnetic_y2_coeff: float = 0.0):
+def set_drifts(b0_scale: float = 65.0, diamagnetic_coeff: float = 0.0):
     """Turn on drifts
 
     :param b0_scale: Scale factor on b0: higher values suppresses drifts. This parameter can steadily reduced to 1 to assist with convergence.
@@ -792,10 +825,10 @@ def set_drifts(b0_scale: float = 65.0, diamagnetic_y2_coeff: float = 0.0):
         1  # switch to turn on diamagnetic drift for sheath potential calculation
     )
     bbb.cfqydbo = 1  # factor to includ. fqyd in core current B.C. only
-    bbb.cfydd = diamagnetic_y2_coeff  # Coef for diamagnetic drift in y-direction
-    bbb.cf2dd = diamagnetic_y2_coeff  # Coef for diamagnetic drift in 2-direction
+    bbb.cfydd = diamagnetic_coeff  # Coef for diamagnetic drift in y-direction
+    bbb.cf2dd = diamagnetic_coeff  # Coef for diamagnetic drift in 2-direction
 
-    bbb.cftdd = 1  # Coef for diamagnetic drift in toroidal direction
+    bbb.cftdd = diamagnetic_coeff  # Coef for diamagnetic drift in toroidal direction
     bbb.cfyef = 1.0  # Coef for ExB drift in y-direction
     bbb.cftef = 1  # Coef for ExB drift in toroidal direction
     bbb.cf2ef = 1.0  # EXB drift in 2 direction

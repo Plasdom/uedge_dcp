@@ -14,16 +14,14 @@ def integrate_var_pol(var: np.ndarray):
     """
     var_integrated = np.zeros(com.ny + 2)
     for iy in range(com.ny + 2):
-        if iy <= com.iysptrx1[0]:
-            var_integrated[iy] = np.sum(var[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, iy])
-            if com.nxpt == 2:
-                var_integrated[iy] += np.sum(
-                    var[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, iy]
-                )
-        else:
-            var_integrated[iy] = np.sum(var[:, iy])
-            if com.nxpt == 2:
-                var_integrated[iy] += np.sum(var[:, iy])
+        # if iy <= com.iysptrx1[0]:
+        var_integrated[iy] = np.sum(var[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, iy])
+        if com.nxpt == 2:
+            var_integrated[iy] += np.sum(var[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, iy])
+    # else:
+    #     var_integrated[iy] = np.sum(var[1:-1, iy])
+    #     if com.nxpt == 2:
+    #         var_integrated[iy] += np.sum(var[1:-1, iy])
 
     return var_integrated
 
