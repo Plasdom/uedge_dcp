@@ -136,7 +136,7 @@ def plot_radial_fluxes(ix: int | None = None):
     ax[0].plot(
         com.yyc,
         tot_fni_gradB + tot_fni_ExB + tot_fni_diff,
-        label=r"Total",
+        label="Sum",
         linestyle="--",
         color="gray",
     )
@@ -151,7 +151,7 @@ def plot_radial_fluxes(ix: int | None = None):
     ax[1].plot(
         com.yyc,
         1e-6 * (fei_gradB + fei_ExB + fei_diff),
-        label="Total",
+        label="Sum",
         color="gray",
         linestyle="--",
     )
@@ -168,7 +168,7 @@ def plot_radial_fluxes(ix: int | None = None):
     ax[2].plot(
         com.yyc,
         1e-6 * (fee_gradB + fee_ExB + fee_diff + fee_cur),
-        label="Total",
+        label="Sum",
         color="gray",
         linestyle="--",
     )
