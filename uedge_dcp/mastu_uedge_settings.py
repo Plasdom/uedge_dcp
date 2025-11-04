@@ -6,6 +6,7 @@ from scipy.interpolate import interp1d
 import subprocess
 import pickle
 import yaml
+import numpy as np
 
 
 def set_geometry(
@@ -256,7 +257,7 @@ def set_carbon_imps(fluid_neuts: bool = False, evolve_mom_eqs: bool = False):
     bbb.allocate()  # allocate space for source arrays,
     # and also ni and up for impurity species.
     bbb.minu[com.nhsp : com.nhsp + 6] = 12.0  # mass in AMU
-    bbb.ziin[com.nhsp : com.nhsp + 6] = array(
+    bbb.ziin[com.nhsp : com.nhsp + 6] = np.array(
         [1, 2, 3, 4, 5, 6]
     )  # iota(6)	# charge of each impurity species
     bbb.znuclin[0 : com.nhsp] = 1  # nuclear charge
@@ -406,6 +407,11 @@ def set_transport_coeffs_DM(
                     d_use[: com.ixpt1[0] + 1, iy] = dif_div
                     d_use[com.ixpt2[1] + 1 :, iy] = dif_div
                     d_use[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, iy] = dif_div
+        elif "dnull" in geometry:
+            ix_mask = com.isixcore == True
+            for iy in range(com.ny + 2):
+                k_use[~ix_mask, iy] = k_radial[-1]
+                d_use[~ix_mask, iy] = d_radial[-1]
         else:
             for iy in range(com.ny + 2):
                 if ky_div is None:
@@ -881,7 +887,7 @@ def set_drifts_maxim(b0_scale: float = 10):
     bbb.cftef = 1.0  # turns on v2ce for toroidal velocity
     bbb.cftdd = 1.0  # turns on v2dd (diamag vel) for toloidal velocity
     bbb.cfqym = 1.0  # turns on inertial correction to fqy current
-    bbb.iphibcc = 3  # don't set extrapolation BC for Er at iy=0
+    bbb.iphibcc = 2  # 3  # te=constant & ey(ixmp,0)=eycore
     bbb.iphibcwi = 0  # set ey=0 on inner wall if =0
     # phi(PF)=phintewi*te(ix,0) on PF wall if =1
     bbb.iphibcwo = 0  # same for outer wall
@@ -891,7 +897,7 @@ def set_drifts_maxim(b0_scale: float = 10):
     bbb.rnewpot = 1.0
     bbb.cfnus_i = 1.0
     bbb.cfnus_e = 1.0  # include collisionality in drift effects
-    bbb.isybdrywd = 1  # use diffusive flux only on y boundary
+    bbb.isybdrywd = 0  # 1  # use diffusive flux only on y boundary
     bbb.lfililut = 200
     bbb.lenpfac = 150
     bbb.lenplufac = 150

@@ -10,6 +10,121 @@ from copy import deepcopy
 import matplotlib
 from matplotlib.collections import PatchCollection
 from matplotlib.widgets import Slider
+import numpy as np
+
+
+def plot_divertor_qparallel():
+    """
+    Written by Shahinul Islam
+    Compute and plot q_|| [MW/m²] along all divertor targets:
+    Targets:
+      1 → Outer (com.ixrb[0])
+      2 → Inner (com.ixlb[1])
+      3 → Outer (com.ixrb[1])
+      4 → Inner (com.ixlb[0])
+
+    """
+
+    bbb.engbal(bbb.pcoree + bbb.pcorei)
+    bbb.plateflux()
+    bbb.pradpltwl()
+
+    bpol_local = 0.5 * (com.bpol[:, :, 2] + com.bpol[:, :, 4])
+    bphi_local = 0.5 * (com.bphi[:, :, 2] + com.bphi[:, :, 4])
+    btot_local = np.sqrt(bpol_local**2 + bphi_local**2)
+    rrf = bpol_local / btot_local  # B_pol / B_tot
+
+    pke_term = 0.5 * bbb.mi[0] * bbb.up[:, :, 0] ** 2 * bbb.fnix[:, :, 0]
+    fetx = bbb.feex + bbb.feix + pke_term  # W per cell
+
+    ix_t1 = com.ixrb[0]  # Outer 1
+    ix_t2 = com.ixlb[1] + 1  # Inner 2
+    ix_t3 = com.ixrb[1]  # Outer 3
+    ix_t4 = com.ixlb[0] + 1  # Inner 4
+
+    psurf_t1 = np.abs(fetx[ix_t1, :]) / com.sx[ix_t1, :] / rrf[ix_t1, :]
+    psurf_t2 = np.abs(fetx[ix_t2, :]) / com.sx[ix_t2, :] / rrf[ix_t2, :]
+    psurf_t3 = np.abs(fetx[ix_t3, :]) / com.sx[ix_t3, :] / rrf[ix_t3, :]
+    psurf_t4 = np.abs(fetx[ix_t4, :]) / com.sx[ix_t4, :] / rrf[ix_t4, :]
+
+    y_outer = com.yyrb
+    y_inner = com.yylb
+
+    plt.figure(figsize=(5, 3))
+    plt.plot(y_outer[1:-1, 0], psurf_t1[1:-1] / 1e6, "r-", label=f"Target 1")
+    plt.plot(y_inner[1:-1, 1], psurf_t2[1:-1] / 1e6, "b--", label=f"Target 2")
+    plt.plot(y_outer[1:-1, 1], psurf_t3[1:-1] / 1e6, "m-", label=f"Target 3")
+    plt.plot(y_inner[1:-1, 0], psurf_t4[1:-1] / 1e6, "g--", label=f"Target 4")
+
+    plt.xlabel("Distance along target (m)", fontsize=14)
+    plt.ylabel("q$_{||}$ [MW/m$^2$]", fontsize=14)
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    return {
+        "surface_density": {
+            "target1_outer": psurf_t1,
+            "target2_inner": psurf_t2,
+            "target3_outer": psurf_t3,
+            "target4_inner": psurf_t4,
+        }
+    }
+
+
+def plot_divertor_power_density():
+    """
+    Written by Shahinul Islam:
+    Compute and plot surface power density [MW/m²] along all divertor targets:
+    Targets:
+      1 → Outer (com.ixrb[0])
+      2 → Inner (com.ixlb[1])
+      3 → Outer (com.ixrb[1])
+      4 → Inner (com.ixlb[0])
+
+    """
+
+    bbb.engbal(bbb.pcoree + bbb.pcorei)  # update core powers, bbb.fetx
+    bbb.plateflux()
+    bbb.pradpltwl()
+
+    pke_term = 0.5 * bbb.mi[0] * bbb.up[:, :, 0] ** 2 * bbb.fnix[:, :, 0]
+    fetx = bbb.feex + bbb.feix + pke_term  # W per cell
+
+    ix_t1 = com.ixrb[0]  # Outer 1
+    ix_t2 = com.ixlb[1]  # Inner 2
+    ix_t3 = com.ixrb[1]  # Outer 3
+    ix_t4 = com.ixlb[0]  # Inner 4
+
+    psurf_t1 = fetx[ix_t1, :] / com.sxnp[ix_t1, :]
+    psurf_t2 = fetx[ix_t2, :] / com.sxnp[ix_t2, :]
+    psurf_t3 = fetx[ix_t3, :] / com.sxnp[ix_t3, :]
+    psurf_t4 = fetx[ix_t4, :] / com.sxnp[ix_t4, :]
+
+    y_outer = com.yyrb
+    y_inner = com.yylb
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(y_outer[:, 0], psurf_t1 / 1e6, "r-", label="Outer Target 1 (ixrb[0])")
+    plt.plot(y_inner[:, 0], psurf_t2 / 1e6, "b--", label="Inner Target 2 (ixlb[1])")
+    plt.plot(y_outer[:, 1], psurf_t3 / 1e6, "m-", label="Outer Target 3 (ixrb[1])")
+    plt.plot(y_inner[:, 1], psurf_t4 / 1e6, "g--", label="Inner Target 4 (ixlb[0])")
+
+    plt.xlabel("Distance along target (m)", fontsize=11)
+    plt.ylabel("Power density [MW/m$^2$]", fontsize=11)
+    plt.title("Divertor surface power density", fontsize=12)
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    return {
+        "target1_outer": psurf_t1,
+        "target2_inner": psurf_t2,
+        "target3_outer": psurf_t3,
+        "target4_inner": psurf_t4,
+    }
 
 
 def plot_radial_fluxes(ix: int | None = None):
@@ -117,6 +232,22 @@ def plot_radial_fluxes(ix: int | None = None):
         axis=0,
     )
 
+    # Compute anomalous pinch fluxes
+    fei_pinch = np.sum(
+        (2 / 5)
+        * ion_energy_upwind[ix_mask, :]
+        * bbb.vyti_use[ix_mask, :]
+        * com.sy[ix_mask, :],
+        axis=0,
+    )
+    fee_pinch = np.sum(
+        (2 / 5)
+        * electron_energy_upwind[ix_mask, :]
+        * bbb.vyte_use[ix_mask, :]
+        * com.sy[ix_mask, :],
+        axis=0,
+    )
+
     # Compute current-driven electron energy flux
     fee_cur = np.sum(
         -electron_energy_face[ix_mask, :]
@@ -142,15 +273,17 @@ def plot_radial_fluxes(ix: int | None = None):
     )
     ax[0].grid()
     ax[0].set_ylabel(r"$\Gamma^{i}_{y}$ [s$^{-1}$]")
-    ax[0].legend()
+    ax[0].legend(loc="upper center")
 
     ax[1].plot(com.yyc, 1e-6 * tot_fei, label="UEDGE", color="black")
     ax[1].plot(com.yyc, 1e-6 * fei_diff, label="Diffusive", color="green")
     ax[1].plot(com.yyc, 1e-6 * fei_gradB, label=r"$\nabla B$", color="blue")
     ax[1].plot(com.yyc, 1e-6 * fei_ExB, label="ExB", color="red")
+    if np.sum(abs(bbb.vyti_use) + abs(bbb.vy_use[:, :, 0])) > 0.0:
+        ax[1].plot(com.yyc, 1e-6 * fei_pinch, label="Pinch", color="darkorange")
     ax[1].plot(
         com.yyc,
-        1e-6 * (fei_gradB + fei_ExB + fei_diff),
+        1e-6 * (fei_gradB + fei_ExB + fei_diff + fei_pinch),
         label="Sum",
         color="gray",
         linestyle="--",
@@ -158,16 +291,18 @@ def plot_radial_fluxes(ix: int | None = None):
     ax[1].set_ylabel(r"$q^{i}_{y}$ [MW]")
     ax[1].set_xlabel("$r - r_{sep}$")
     ax[1].grid()
-    ax[1].legend()
+    ax[1].legend(loc="upper center")
 
     ax[2].plot(com.yyc, 1e-6 * tot_fee, label="UEDGE", color="black")
     ax[2].plot(com.yyc, 1e-6 * fee_diff, label="Diffusive", color="green")
     ax[2].plot(com.yyc, 1e-6 * fee_gradB, label=r"$\nabla B$", color="blue")
     ax[2].plot(com.yyc, 1e-6 * fee_ExB, label="ExB", color="red")
     ax[2].plot(com.yyc, 1e-6 * fee_cur, label="Current-driven", color="purple")
+    if np.sum(abs(bbb.vyte_use) + abs(bbb.vy_use[:, :, 0])) > 0.0:
+        ax[2].plot(com.yyc, 1e-6 * fee_pinch, label="Pinch", color="darkorange")
     ax[2].plot(
         com.yyc,
-        1e-6 * (fee_gradB + fee_ExB + fee_diff + fee_cur),
+        1e-6 * (fee_gradB + fee_ExB + fee_diff + fee_cur + fee_pinch),
         label="Sum",
         color="gray",
         linestyle="--",
@@ -175,7 +310,7 @@ def plot_radial_fluxes(ix: int | None = None):
     ax[2].set_ylabel(r"$q^{e}_{y}$ [MW]")
     ax[2].set_xlabel("$r - r_{sep}$")
     ax[2].grid()
-    ax[2].legend()
+    ax[2].legend(loc="upper center")
 
     fig.subplots_adjust(hspace=0.05, left=0.15)
 
@@ -262,6 +397,13 @@ def comparemesh(
     geom1: str = "snowflake75",
     geom2: str = "snowflake75",
 ):
+    """Plot two UEDGE grids on top of each other for comparison
+
+    :param gridfile1: Path to first gridue file
+    :param gridfile2: Path to seconds gridue file
+    :param geom1: Geometry of first gridfile (actually unused - TODO: remove), defaults to "snowflake75"
+    :param geom2: Geometry of second gridfile (actually unused - TODO: remove), defaults to "snowflake75"
+    """
     g1 = Grid(geom1, gridfile1)
     g2 = Grid(geom2, gridfile2)
 
@@ -585,7 +727,7 @@ def animatevar(
 
 
 def plot_q_drifts(
-    logscale_linewidth: bool = True, linewidth_mult: float = 50, **kwargs
+    logscale_linewidth: bool = True, linewidth_mult: float = 1e-6, **kwargs
 ):
     """Plot ExB and grad B drift heat flux streamlines
 
@@ -597,6 +739,10 @@ def plot_q_drifts(
         q_ExB[:, :, 1],
         logscale_linewidth=logscale_linewidth,
         linewidth_mult=linewidth_mult,
+        linewidth="absolute",
+        title=r"$q_{E\times B}$",
+        linewidth_legend=True,
+        legend_units="Wm$^{-2}$",
         **kwargs,
     )
     streamplotvar(
@@ -604,6 +750,42 @@ def plot_q_drifts(
         q_gradB[:, :, 1],
         logscale_linewidth=logscale_linewidth,
         linewidth_mult=linewidth_mult,
+        linewidth="absolute",
+        title=r"$q_{\nabla B}$",
+        linewidth_legend=True,
+        legend_units="Wm$^{-2}$",
+        **kwargs,
+    )
+
+
+def plot_fni_drifts(
+    logscale_linewidth: bool = True, linewidth_mult: float = 1e-21, **kwargs
+):
+    """Plot ExB and grad B drift ion particle flux streamlines
+
+    :param kwargs: Keyword arguments for streamplotvar()
+    """
+    fni_ExB, fni_gradB = pp.get_fni_drifts()
+    streamplotvar(
+        fni_ExB[:, :, 0],
+        fni_ExB[:, :, 1],
+        logscale_linewidth=logscale_linewidth,
+        linewidth_mult=linewidth_mult,
+        linewidth="absolute",
+        title=r"$\Gamma^i_{E\times B}$",
+        linewidth_legend=True,
+        legend_units="s$^{-1}$",
+        **kwargs,
+    )
+    streamplotvar(
+        fni_gradB[:, :, 0],
+        fni_gradB[:, :, 1],
+        logscale_linewidth=logscale_linewidth,
+        linewidth_mult=linewidth_mult,
+        linewidth="absolute",
+        title=r"$\Gamma^i_{\nabla B}$",
+        linewidth_legend=True,
+        legend_units="s$^{-1}$",
         **kwargs,
     )
 
@@ -623,10 +805,12 @@ def streamplotvar(
     density=2,
     linewidth_mult=1,
     linewidth_legend: bool = False,
+    legend_units: str = "",
     xlim=(None, None),
     ylim=(None, None),
     logscale=False,
     title: str = "",
+    show_mask: bool = False,
     **kwargs,
 ):
     """Plot streamlines of a vector variable with poloidal and radial components (pol, rad). Based on the function streamline() in UETools (https://github.com/LLNL/UETOOLS/blob/aaa823222ecc8ae76647aa8bf5299cd9804b61b1/src/uetools/UePlot/Plot.py)
@@ -711,41 +895,64 @@ def streamplotvar(
             outery += list(zm[:, ::-1][-1, :, 4])
             outery += list(zm[::-1][: nx - com.ixpt2[0], 0, 1])
         elif com.nxpt == 2:
-            outerx = []
-            outerx += list(rm[::-1][-com.ixpt1[0] - 1 :, 0, 2])
-            outerx += list(rm[0, :, 1])
-            outerx += list(rm[: com.ixrb[0] + 1, -1, 2])
-            outerx += list(rm[com.ixrb[0] + 1, :-1, 1][::-1])
-            outerx += list(rm[com.ixpt1[1] + 1 : com.ixrb[0] + 1, 0, 1][::-1])
-            outerx += list(rm[com.ixlb[1] : com.ixpt2[1] + 1, 0, 2][::-1])
-            outerx += list(rm[com.ixlb[1], :, 2])
-            outerx += list(rm[com.ixlb[1] : com.ixpt2[1] + 1, -1, 2])
-            outerx += list(rm[com.ixpt2[1] :, -1, 2])
-            outerx += list(rm[-1, :, 2][::-1])
-            outerx += list(rm[com.ixpt2[1] + 1 : -1, 0, 1][::-1])
-            outerx += list(rm[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, 0, 2])
-            outery = []
-            outery += list(zm[::-1][-com.ixpt1[0] - 1 :, 0, 2])
-            outery += list(zm[0, :, 1])
-            outery += list(zm[: com.ixrb[0] + 1, -1, 2])
-            outery += list(zm[com.ixrb[0] + 1, :-1, 1][::-1])
-            outery += list(zm[com.ixpt1[1] + 1 : com.ixrb[0] + 1, 0, 1][::-1])
-            outery += list(zm[com.ixlb[1] : com.ixpt2[1] + 1, 0, 2][::-1])
-            outery += list(zm[com.ixlb[1], :, 2])
-            outery += list(zm[com.ixlb[1] : com.ixpt2[1] + 1, -1, 2])
-            outery += list(zm[com.ixpt2[1] :, -1, 2])
-            outery += list(zm[-1, :, 2][::-1])
-            outery += list(zm[com.ixpt2[1] + 1 : -1, 0, 1][::-1])
-            outery += list(zm[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, 0, 2])
+            if "snowflake15" in str(com.geometry[0]):
+                outerx = []
+                outerx += list(rm[com.ixlb[0], :-1, 4])
+                outerx += list(rm[: com.ixrb[0] + 1, com.ny, 4])
+                outerx += list(rm[com.ixrb[0], 1:, 2][::-1])
+                outerx += list(rm[com.ixpt2[0] + 1 : com.ixrb[0] + 1, 1, 1][::-1])
+                outerx += list(rm[com.ixlb[1] + 1 : com.ixpt1[1] + 1, 1, 1][::-1])
+                outerx += list(rm[com.ixlb[1] + 1, :, 1])
+                outerx += list(rm[com.ixlb[1] + 1 :, com.ny, 3])
+                outerx += list(rm[com.ixrb[1], 1:, 2][::-1])
+                outerx += list(rm[com.ixpt2[1] + 1 : com.ixrb[1] + 1, 1, 1][::-1])
+                outerx += list(rm[1 : com.ixpt1[0] + 1, 1, 1][::-1])
 
-        # innerx = rm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]
-        # innery = zm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]
-        innerx = list(rm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]) + [
-            rm[com.ixpt2[0], 0, 2]
-        ]
-        innery = list(zm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 1]) + [
-            zm[com.ixpt2[0], 0, 2]
-        ]
+                outery = []
+                outery += list(zm[com.ixlb[0], :-1, 4])
+                outery += list(zm[: com.ixrb[0] + 1, com.ny, 4])
+                outery += list(zm[com.ixrb[0], 1:, 2][::-1])
+                outery += list(zm[com.ixpt2[0] + 1 : com.ixrb[0] + 1, 1, 1][::-1])
+                outery += list(zm[com.ixlb[1] + 1 : com.ixpt1[1] + 1, 1, 1][::-1])
+                outery += list(zm[com.ixlb[1] + 1, :, 1])
+                outery += list(zm[com.ixlb[1] + 1 :, com.ny, 3])
+                outery += list(zm[com.ixrb[1], 1:, 2][::-1])
+                outery += list(zm[com.ixpt2[1] + 1 : com.ixrb[1] + 1, 1, 1][::-1])
+                outery += list(zm[1 : com.ixpt1[0] + 1, 1, 1][::-1])
+
+            else:
+                outerx = []
+                outerx += list(rm[::-1][-com.ixpt1[0] - 1 :, 0, 2])
+                outerx += list(rm[0, :, 1])
+                outerx += list(rm[: com.ixrb[0] + 1, -1, 2])
+                outerx += list(rm[com.ixrb[0] + 1, :-1, 1][::-1])
+                outerx += list(rm[com.ixpt1[1] + 1 : com.ixrb[0] + 1, 0, 1][::-1])
+                outerx += list(rm[com.ixlb[1] : com.ixpt2[1] + 1, 0, 2][::-1])
+                outerx += list(rm[com.ixlb[1], :, 2])
+                outerx += list(rm[com.ixlb[1] : com.ixpt2[1] + 1, -1, 2])
+                outerx += list(rm[com.ixpt2[1] :, -1, 2])
+                outerx += list(rm[-1, :, 2][::-1])
+                outerx += list(rm[com.ixpt2[1] + 1 : -1, 0, 1][::-1])
+                outerx += list(rm[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, 0, 2])
+                outery = []
+                outery += list(zm[::-1][-com.ixpt1[0] - 1 :, 0, 2])
+                outery += list(zm[0, :, 1])
+                outery += list(zm[: com.ixrb[0] + 1, -1, 2])
+                outery += list(zm[com.ixrb[0] + 1, :-1, 1][::-1])
+                outery += list(zm[com.ixpt1[1] + 1 : com.ixrb[0] + 1, 0, 1][::-1])
+                outery += list(zm[com.ixlb[1] : com.ixpt2[1] + 1, 0, 2][::-1])
+                outery += list(zm[com.ixlb[1], :, 2])
+                outery += list(zm[com.ixlb[1] : com.ixpt2[1] + 1, -1, 2])
+                outery += list(zm[com.ixpt2[1] :, -1, 2])
+                outery += list(zm[-1, :, 2][::-1])
+                outery += list(zm[com.ixpt2[1] + 1 : -1, 0, 1][::-1])
+                outery += list(zm[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, 0, 2])
+
+        innerx = list(rm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 3])
+        innery = list(zm[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, 0, 3])
+        if com.nxpt == 2:
+            innerx += list(rm[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, 0, 3])
+            innery += list(zm[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, 0, 3])
 
         outer = Polygon(
             array([outerx, outery]).transpose(),
@@ -858,16 +1065,17 @@ def streamplotvar(
             [],
             linewidth=lw_1,
             color="red",
-            label="{:.2f}".format(1e-6 * v_1) + " MWm$^{-2}$",
+            label="{:.2e}".format(v_1) + legend_units,
+            zorder=9999999,
         )
-        ax.plot(
-            [],
-            [],
-            linewidth=lw_2,
-            color="red",
-            label="{:.2f}".format(1e-6 * v_2) + " MWm$^{-2}$",
-        )
-        ax.legend(loc="lower left")
+        # ax.plot(
+        #     [],
+        #     [],
+        #     linewidth=lw_2,
+        #     color="red",
+        #     label="{:.2f}".format(1e-6 * v_2) + " MWm$^{-2}$",
+        # )
+        ax.legend(loc="center", bbox_to_anchor=(1.4, 0.7), fontsize=8)
 
     ax.set_xlabel("R [m]")
     ax.set_ylabel("Z [m]")
@@ -876,8 +1084,9 @@ def streamplotvar(
     if title != "":
         ax.set_title(title)
 
-    ax.plot(outerx, outery)
-    ax.plot(innerx, innery)
+    if show_mask:
+        ax.plot(outerx, outery)
+        ax.plot(innerx, innery)
     # ax.scatter(
     #     gx.flatten(),
     #     gy.flatten(),
@@ -1034,7 +1243,7 @@ def plotpslice(iy: int):
 
     ch[:, iy] = 1
 
-    plotvar(ch)
+    plotvar(ch, cmap="viridis_r")
 
 
 def plotrslice(ix: list):
@@ -1047,7 +1256,7 @@ def plotrslice(ix: list):
 
     ch[ix, :] = 1
 
-    plotvar(ch)
+    plotvar(ch, cmap="viridis")
 
 
 def plotrprof(
@@ -1076,10 +1285,12 @@ def plotrprof(
 
     if ix < 0:
         ix0 = bbb.ixmp
+        xcoord = com.yyc
+        xlabel = r"$r-r_{sep}$"
     else:
         ix0 = ix
-
-    xcoord = com.rm[ix0, :, 0]
+        xcoord = com.rm[ix0, :, 0] - com.rm[ix0, com.iysptrx1[0], 0]
+        xlabel = r"$R-R_{sep}$"
 
     # if use_psin:
     #     psin = (com.psi - com.simagx) / (com.sibdry - com.simagx)
@@ -1104,7 +1315,7 @@ def plotrprof(
     if xlog:
         ax.set_xscale("log")
 
-    ax.set_xlabel("iy")
+    ax.set_xlabel(xlabel)
     ax.grid(True)
 
     if show:

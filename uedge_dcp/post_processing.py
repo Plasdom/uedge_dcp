@@ -153,16 +153,91 @@ def get_q_drifts():
 
     :return: q_ExB, q_gradB
     """
+
+    # q_ExB = np.zeros((com.nx + 2, com.ny + 2, 2))
+    # q_gradB = np.zeros((com.nx + 2, com.ny + 2, 2))
+    # p = (bbb.ne * bbb.te) + (bbb.ni[:, :, 0] * bbb.ti)
+    # q_ExB[:, :, 0] = (
+    #     -(5 / 2) * np.sign(bbb.b0) * np.sqrt(1 - com.rr**2) * bbb.v2ce[:, :, 0] * p
+    # )
+    # q_ExB[:, :, 1] = (5 / 2) * bbb.vyce[:, :, 0] * p
+    # q_gradB[:, :, 0] = (
+    #     -(5 / 2) * np.sign(bbb.b0) * np.sqrt(1 - com.rr**2) * bbb.v2cb[:, :, 0] * p
+    # )
+    # q_gradB[:, :, 1] = (5 / 2) * bbb.vycb[:, :, 0] * p
+
     # Compute the heat fluxes
+    niy_upwind = np.where(bbb.vy[:, :, 0] > 0, bbb.niy0[:, :, 0], bbb.niy1[:, :, 0])
+    ney_upwind = np.where(bbb.vy[:, :, 0] > 0, bbb.ney0[:, :], bbb.ney1[:, :])
+    tey_upwind = np.where(bbb.vy[:, :, 0] > 0, bbb.tey0[:, :], bbb.tey1[:, :])
+    tiy_upwind = np.where(bbb.vy[:, :, 0] > 0, bbb.tiy0[:, :], bbb.tiy1[:, :])
+    ion_energy_upwindy = (
+        (5 / 2) * tiy_upwind
+        + (1 / 2) * bbb.mp * bbb.minu[0] * (bbb.up[:, :, 0] + bbb.vy[:, :, 0]) ** 2
+    ) * niy_upwind
+    electron_energy_upwindy = (5 / 2) * tey_upwind * ney_upwind
+    ion_energy_x = (
+        (5 / 2) * bbb.ti
+        + (1 / 2) * bbb.mp * bbb.minu[0] * (bbb.up[:, :, 0] + bbb.vy[:, :, 0]) ** 2
+    ) * bbb.ni[:, :, 0]
+    electron_energy_x = (5 / 2) * bbb.te * bbb.ne
     q_ExB = np.zeros((com.nx + 2, com.ny + 2, 2))
     q_gradB = np.zeros((com.nx + 2, com.ny + 2, 2))
-    p = (bbb.ne * bbb.te) + (bbb.ni[:, :, 0] * bbb.ti)
-    q_ExB[:, :, 0] = -np.sign(bbb.b0) * np.sqrt(1 - com.rr**2) * bbb.v2ce[:, :, 0] * p
-    q_ExB[:, :, 1] = bbb.vyce[:, :, 0] * p
-    q_gradB[:, :, 0] = -np.sign(bbb.b0) * np.sqrt(1 - com.rr**2) * bbb.v2cb[:, :, 0] * p
-    q_gradB[:, :, 1] = bbb.vycb[:, :, 0] * p
+    q_ExB[:, :, 0] = (
+        -np.sign(bbb.b0)
+        * np.sqrt(1 - com.rr**2)
+        * bbb.cf2ef
+        * bbb.v2ce[:, :, 0]
+        * (ion_energy_x + electron_energy_x)
+    )
+    q_ExB[:, :, 1] = (
+        bbb.cfyef * bbb.vyce[:, :, 0] * (ion_energy_upwindy + electron_energy_upwindy)
+    )
+    q_gradB[:, :, 0] = (
+        -np.sign(bbb.b0)
+        * np.sqrt(1 - com.rr**2)
+        * bbb.cf2bf
+        * bbb.v2cb[:, :, 0]
+        * (ion_energy_x + electron_energy_x)
+    )
+    q_gradB[:, :, 1] = (
+        bbb.cfybf * bbb.vycb[:, :, 0] * (ion_energy_upwindy + electron_energy_upwindy)
+    )
 
     return q_ExB, q_gradB
+
+
+def get_fni_drifts():
+    """Get the ExB and grad B convective ion particle fluxes. Outputs have dimensions [com.nx+2,com.ny+2,2], where the third dimension contains the x and y components of the vector (in UEDGE coordinates)
+
+    :return: fni_ExB, fni_gradB
+    """
+
+    # Compute the particle fluxes
+    niy_upwind = np.where(bbb.vy[:, :, 0] > 0, bbb.niy0[:, :, 0], bbb.niy1[:, :, 0])
+
+    fni_ExB = np.zeros((com.nx + 2, com.ny + 2, 2))
+    fni_gradB = np.zeros((com.nx + 2, com.ny + 2, 2))
+    fni_ExB[:, :, 0] = (
+        -np.sign(bbb.b0)
+        * np.sqrt(1 - com.rr**2)
+        * bbb.cf2ef
+        * bbb.v2ce[:, :, 0]
+        * niy_upwind[:, :]
+        * com.sy[:, :]
+    )
+    fni_ExB[:, :, 1] = bbb.cfyef * bbb.vyce[:, :, 0] * niy_upwind[:, :] * com.sy[:, :]
+    fni_gradB[:, :, 0] = (
+        -np.sign(bbb.b0)
+        * np.sqrt(1 - com.rr**2)
+        * bbb.cf2bf
+        * bbb.v2cb[:, :, 0]
+        * niy_upwind[:, :]
+        * com.sy[:, :]
+    )
+    fni_gradB[:, :, 1] = bbb.cfybf * bbb.fniycb[:, :, 0]
+
+    return fni_ExB, fni_gradB
 
 
 def compute_lambdaq_extended(Bt, q95, R):
@@ -636,31 +711,36 @@ def get_yyc(
     return y_mp
 
 
-def calculate_P_sol():
+def Psol():
     """Calculate the power crossing the separatrix
 
     :return: P_sol in W
     """
-    if com.nxpt == 1:
-        P_sol = np.sum(
-            bbb.feey[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx]
-            + bbb.feiy[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx]
-        )
-    else:
-        if "snowflake15" in str(com.geometry):
-            P_sol = np.sum(
-                bbb.feey[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx]
-                + bbb.feiy[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx]
-            )
-            P_sol += np.sum(
-                bbb.feey[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, com.iysptrx]
-                + bbb.feiy[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, com.iysptrx]
-            )
-        elif "snowflake75" in str(com.geometry):
-            P_sol = np.sum(
-                bbb.feey[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx1[0]]
-                + bbb.feiy[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx1[0]]
-            )
+    # ix_mask = com.isixcore == True
+    # if com.nxpt == 1:
+    #     P_sol = np.sum(
+    #         bbb.feey[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx]
+    #         + bbb.feiy[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx]
+    #     )
+    # else:
+    #     if "snowflake15" in str(com.geometry):
+    #         P_sol = np.sum(
+    #             bbb.feey[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx]
+    #             + bbb.feiy[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx]
+    #         )
+    #         P_sol += np.sum(
+    #             bbb.feey[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, com.iysptrx]
+    #             + bbb.feiy[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, com.iysptrx]
+    #         )
+    #     elif "snowflake75" in str(com.geometry):
+    #         P_sol = np.sum(
+    #             bbb.feey[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx1[0]]
+    #             + bbb.feiy[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx1[0]]
+    #         )
+    ix_mask = com.isixcore == True
+    P_sol = np.sum(
+        bbb.feey[ix_mask, com.iysptrx1[0]] + bbb.feiy[ix_mask, com.iysptrx1[0]]
+    )
 
     if com.isudsym == 1:
         P_sol *= 2
