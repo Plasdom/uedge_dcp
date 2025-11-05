@@ -119,6 +119,32 @@ def get_dr_plate(r):
     return dr
 
 
+def get_q_plates() -> tuple[list[np.ndarray], list[np.ndarray]]:
+    """Get the heat flux and coordinates along the target for each strike point
+
+    :return: [q1, q2, ...], [r1, r2, ...]
+    """
+    bbb.plateflux()
+    if com.nxpt == 1:
+        q1 = q_odata[0]
+        q2 = q_idata[0]
+        r1 = com.yyrb.T[0]
+        r2 = com.yylb.T[0]
+        return [q1, q2], [r1, r2]
+    if com.nxpt == 2:
+        q_odata = (bbb.sdrrb + bbb.sdtrb).T
+        q_idata = (bbb.sdrlb + bbb.sdtlb).T
+        q1 = q_odata[0]
+        q2 = q_idata[1]
+        q3 = q_odata[1]
+        q4 = q_idata[0]
+        r1 = com.yyrb.T[0]
+        r2 = com.yylb.T[1]
+        r3 = com.yyrb.T[1]
+        r4 = com.yylb.T[0]
+        return [q1, q2, q3, q4], [r1, r2, r3, r4]
+
+
 def get_Q_target_proportions():
     """Get the proportions of heat flux delivered to each strike point
 
@@ -128,12 +154,12 @@ def get_Q_target_proportions():
     q_odata = (bbb.sdrrb + bbb.sdtrb).T
     q_idata = (bbb.sdrlb + bbb.sdtlb).T
     q1 = q_odata[0]
-    q2 = q_odata[1]
-    q3 = q_idata[1]
+    q2 = q_idata[1]
+    q3 = q_odata[1]
     q4 = q_idata[0]
     r1 = com.yyrb.T[0]
-    r2 = com.yyrb.T[1]
-    r3 = com.yylb.T[1]
+    r2 = com.yylb.T[1]
+    r3 = com.yyrb.T[1]
     r4 = com.yylb.T[0]
     dr1 = get_dr_plate(r1)
     dr2 = get_dr_plate(r2)

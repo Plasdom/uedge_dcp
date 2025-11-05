@@ -127,10 +127,14 @@ def plot_divertor_power_density():
     }
 
 
-def plot_radial_fluxes(ix: int | None = None):
+def plot_radial_fluxes(
+    ix: int | None = None, show_sum: bool = True, legend_loc: str = "upper center"
+):
     """Plot the poloidally-integrated particle and energy fluxes in each radial cell in the core and SOL (i.e. PFR is ignored)
 
     :param ix: Poloidal cell index, defaults to None (in which case the fluxes will be integrated poloidally over all cells connected radially to the core)
+    :param show_sum: Plot the sum of the individual components of the radial fluxes (whcih should add up to the UEDGE output value), defaults to True
+    :param legend_loc: Legend location (passed to matplotlib.pyplot.Axes.legend(loc=legend_loc))
     """
     if ix is None:
         # Consider only cells connected radially to the core
@@ -260,57 +264,60 @@ def plot_radial_fluxes(ix: int | None = None):
     # Plot
     fig, ax = plt.subplots(3, figsize=(5.5, 7.5), sharex=True)
 
-    ax[0].plot(com.yyc, tot_fni, label="UEDGE", color="black")
+    ax[0].plot(com.yyc, tot_fni, label="UEDGE total", color="black")
     ax[0].plot(com.yyc, tot_fni_diff, label=r"Diffusive", color="green")
     ax[0].plot(com.yyc, tot_fni_gradB, label=r"$\nabla B$", color="blue")
     ax[0].plot(com.yyc, tot_fni_ExB, label=r"$E \times B$", color="red")
-    ax[0].plot(
-        com.yyc,
-        tot_fni_gradB + tot_fni_ExB + tot_fni_diff,
-        label="Sum",
-        linestyle="--",
-        color="gray",
-    )
+    if show_sum:
+        ax[0].plot(
+            com.yyc,
+            tot_fni_gradB + tot_fni_ExB + tot_fni_diff,
+            label="Sum",
+            linestyle="--",
+            color="gray",
+        )
     ax[0].grid()
     ax[0].set_ylabel(r"$\Gamma^{i}_{y}$ [s$^{-1}$]")
-    ax[0].legend(loc="upper center")
+    ax[0].legend(loc=legend_loc)
 
-    ax[1].plot(com.yyc, 1e-6 * tot_fei, label="UEDGE", color="black")
+    ax[1].plot(com.yyc, 1e-6 * tot_fei, label="UEDGE total", color="black")
     ax[1].plot(com.yyc, 1e-6 * fei_diff, label="Diffusive", color="green")
     ax[1].plot(com.yyc, 1e-6 * fei_gradB, label=r"$\nabla B$", color="blue")
     ax[1].plot(com.yyc, 1e-6 * fei_ExB, label="ExB", color="red")
     if np.sum(abs(bbb.vyti_use) + abs(bbb.vy_use[:, :, 0])) > 0.0:
         ax[1].plot(com.yyc, 1e-6 * fei_pinch, label="Pinch", color="darkorange")
-    ax[1].plot(
-        com.yyc,
-        1e-6 * (fei_gradB + fei_ExB + fei_diff + fei_pinch),
-        label="Sum",
-        color="gray",
-        linestyle="--",
-    )
+    if show_sum:
+        ax[1].plot(
+            com.yyc,
+            1e-6 * (fei_gradB + fei_ExB + fei_diff + fei_pinch),
+            label="Sum",
+            color="gray",
+            linestyle="--",
+        )
     ax[1].set_ylabel(r"$q^{i}_{y}$ [MW]")
     ax[1].set_xlabel("$r - r_{sep}$")
     ax[1].grid()
-    ax[1].legend(loc="upper center")
+    ax[1].legend(loc=legend_loc)
 
-    ax[2].plot(com.yyc, 1e-6 * tot_fee, label="UEDGE", color="black")
+    ax[2].plot(com.yyc, 1e-6 * tot_fee, label="UEDGE total", color="black")
     ax[2].plot(com.yyc, 1e-6 * fee_diff, label="Diffusive", color="green")
     ax[2].plot(com.yyc, 1e-6 * fee_gradB, label=r"$\nabla B$", color="blue")
     ax[2].plot(com.yyc, 1e-6 * fee_ExB, label="ExB", color="red")
     ax[2].plot(com.yyc, 1e-6 * fee_cur, label="Current-driven", color="purple")
     if np.sum(abs(bbb.vyte_use) + abs(bbb.vy_use[:, :, 0])) > 0.0:
         ax[2].plot(com.yyc, 1e-6 * fee_pinch, label="Pinch", color="darkorange")
-    ax[2].plot(
-        com.yyc,
-        1e-6 * (fee_gradB + fee_ExB + fee_diff + fee_cur + fee_pinch),
-        label="Sum",
-        color="gray",
-        linestyle="--",
-    )
+    if show_sum:
+        ax[2].plot(
+            com.yyc,
+            1e-6 * (fee_gradB + fee_ExB + fee_diff + fee_cur + fee_pinch),
+            label="Sum",
+            color="gray",
+            linestyle="--",
+        )
     ax[2].set_ylabel(r"$q^{e}_{y}$ [MW]")
     ax[2].set_xlabel("$r - r_{sep}$")
     ax[2].grid()
-    ax[2].legend(loc="upper center")
+    ax[2].legend(loc=legend_loc)
 
     fig.subplots_adjust(hspace=0.05, left=0.15)
 
@@ -817,16 +824,24 @@ def streamplotvar(
 
     :param pol: Poloidal component of variable
     :param rad: Radial component of variable
-    :param resolution: Resolution, defaults to (500j, 800j)
-    :param linewidth: Streamline width (can be a float, "magnitude" or "absolute"), defaults to "magnitude"
-    :param broken_streamlines: Whether to plot broken streamlines or not, defaults to False
+    :param background_var: Scalar background variable to plot underneath streamlines (e.g. temperature), defaults to None
+    :param background_var_label: Label for background scalar variable, defaults to None
+    :param resolution: Resolution of a Cartesian grid on which to interpolate x-y components of vector field directions, defaults to (500j, 800j)
+    :param linewidth: Method of calculating linewidths, "magnitude" (in which case all linewidths are scaled to the maximum vector magnitude) or "absolute" (used in conjunction with linewidth_mult to set linewidths in absolute terms; useful for comparisons with other streamline plots), defaults to "magnitude"
+    :param logscale_linewidth: Linewidths are calculated on a logarithmic scale, defaults to False
+    :param broken_streamlines: Whether streamlines are brroken, defaults to True
     :param color: Colour of streamlines, defaults to "red"
     :param maxlength: Max length of streamlines, defaults to 0.4
-    :param mask: Mask, defaults to True
+    :param mask: Whether to mask regions outside of simulation domain, defaults to True
     :param density: Density of streamlines, defaults to 2
     :param linewidth_mult: Linewidth multiplier (useful if using linewidth="magnitude"), defaults to 1
-    :param xlim: xlim, defaults to (None, None)
-    :param ylim: ylim, defaults to (None, None)
+    :param linewidth_legend: _description_, defaults to False
+    :param legend_units: _description_, defaults to ""
+    :param xlim: x-axis limits, defaults to (None, None)
+    :param ylim: y-axis limits, defaults to (None, None)
+    :param logscale: Whether the scalar variable is plotted on a logscale colour map, defaults to False
+    :param title: Title of plot, defaults to ""
+    :param show_mask: Whether to plot the mask region boundaries (used for debugging), defaults to False
     """
 
     rm = com.rm
