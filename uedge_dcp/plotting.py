@@ -216,7 +216,7 @@ def plot_radial_fluxes(
     fei_diff = np.sum(
         (
             ion_energy_upwind[ix_mask, :] * bbb.vydd[ix_mask, :, 0] * com.sy[ix_mask, :]
-            - bbb.kyi_use[ix_mask, :]
+            - (bbb.kyi_use[ix_mask, :] + bbb.kyi)
             * bbb.gtiy[ix_mask, :]
             * niy_upwind[ix_mask, :]
             * com.sy[ix_mask, :]
@@ -228,7 +228,7 @@ def plot_radial_fluxes(
             electron_energy_upwind[ix_mask, :]
             * bbb.vydd[ix_mask, :, 0]
             * com.sy[ix_mask, :]
-            - bbb.kye_use[ix_mask, :]
+            - (bbb.kye_use[ix_mask, :] + bbb.kye)
             * bbb.gtey[ix_mask, :]
             * ney_upwind[ix_mask, :]
             * com.sy[ix_mask, :]

@@ -1019,6 +1019,7 @@ def scan_variable(
     savedir: str = "variable_scan",
     num_steps: int = 10,
     method: str = "linear",
+    **rundt_kwargs,
 ):
     """Scan a variable from its initial value to the target using rundt
 
@@ -1028,6 +1029,7 @@ def scan_variable(
     :param savedir: Directory to save intermediate steps, defaults to "variable_scan"
     :param num_steps: Number of steps to take, defaults to 10
     :param step_method: Step method, options: "linear", "geometric", "inverse", defaults to "linear"
+    :param rundt_kwargs: Keyword arguments passed to rundt()
     """
 
     # Generate the values over which to scan
@@ -1060,7 +1062,7 @@ def scan_variable(
         setattr(bbb, var, val)
         bbb.dtreal = 1e-12
         bbb.exmain()
-        rundt()
+        rundt(**rundt_kwargs)
         perc = 100 * (i + 1) / (num_steps - 1)
         if bbb.iterm == 1:
             print("======= PROGRESS = {:.2f}% =======".format(perc))
