@@ -233,14 +233,16 @@ def get_q_drifts():
     return q_ExB, q_gradB
 
 
-def get_fni_drifts():
+def get_fni_drifts(index: int = 0):
     """Get the ExB and grad B convective ion particle fluxes. Outputs have dimensions [com.nx+2,com.ny+2,2], where the third dimension contains the x and y components of the vector (in UEDGE coordinates)
 
     :return: fni_ExB, fni_gradB
     """
 
     # Compute the particle fluxes
-    niy_upwind = np.where(bbb.vy[:, :, 0] > 0, bbb.niy0[:, :, 0], bbb.niy1[:, :, 0])
+    niy_upwind = np.where(
+        bbb.vy[:, :, index] > 0, bbb.niy0[:, :, index], bbb.niy1[:, :, index]
+    )
 
     fni_ExB = np.zeros((com.nx + 2, com.ny + 2, 2))
     fni_gradB = np.zeros((com.nx + 2, com.ny + 2, 2))
@@ -248,20 +250,22 @@ def get_fni_drifts():
         -np.sign(bbb.b0)
         * np.sqrt(1 - com.rr**2)
         * bbb.cf2ef
-        * bbb.v2ce[:, :, 0]
+        * bbb.v2ce[:, :, index]
         * niy_upwind[:, :]
         * com.sy[:, :]
     )
-    fni_ExB[:, :, 1] = bbb.cfyef * bbb.vyce[:, :, 0] * niy_upwind[:, :] * com.sy[:, :]
+    fni_ExB[:, :, 1] = (
+        bbb.cfyef * bbb.vyce[:, :, index] * niy_upwind[:, :] * com.sy[:, :]
+    )
     fni_gradB[:, :, 0] = (
         -np.sign(bbb.b0)
         * np.sqrt(1 - com.rr**2)
         * bbb.cf2bf
-        * bbb.v2cb[:, :, 0]
+        * bbb.v2cb[:, :, index]
         * niy_upwind[:, :]
         * com.sy[:, :]
     )
-    fni_gradB[:, :, 1] = bbb.cfybf * bbb.fniycb[:, :, 0]
+    fni_gradB[:, :, 1] = bbb.cfybf * bbb.fniycb[:, :, index]
 
     return fni_ExB, fni_gradB
 
@@ -763,6 +767,8 @@ def Psol():
     #             bbb.feey[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx1[0]]
     #             + bbb.feiy[com.ixpt1[0] + 1 : com.ixpt2[0] + 1, com.iysptrx1[0]]
     #         )
+
+    # TODO: In SF135 geometry, should be summing on iy=com.iysptrx2[0] - double check for all geometries
     ix_mask = com.isixcore == True
     P_sol = np.sum(
         bbb.feey[ix_mask, com.iysptrx1[0]] + bbb.feiy[ix_mask, com.iysptrx1[0]]
