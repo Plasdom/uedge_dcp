@@ -14,6 +14,7 @@ setuptools.setup(
         "pandas",
         "shapely",
         "netCDF4",
+        "freeqdsk>=0.5",
     ],
     author="Dominic Power",
     author_email="power8@llnl.gov",
