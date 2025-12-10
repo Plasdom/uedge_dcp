@@ -13,6 +13,17 @@ from matplotlib.widgets import Slider
 import numpy as np
 
 
+def plotrad(**plotvar_kwargs):
+    """Plot impurity radiation"""
+    plotvar(
+        bbb.prad,
+        logscale=True,
+        vmin=10**4.5,
+        label="$P_{rad}$ [Wm$^{-3}$]",
+        **plotvar_kwargs,
+    )
+
+
 def plot_divertor_qparallel():
     """
     Written by Shahinul Islam
@@ -502,6 +513,8 @@ def plotmesh(
     if show:
         plt.show()
 
+    return ax
+
 
 def plotvar(
     var: np.ndarray,
@@ -514,10 +527,11 @@ def plotvar(
     vmin: float = None,
     vmax: float = None,
     yinv: bool = False,
+    geometry: bool = True,
     title: str = "UEDGE data",
     subtitle: str = None,
-    show: bool = True,
     logscale: bool = False,
+    linthresh: float = 1,
     xlim: tuple = (None, None),
     ylim: tuple = (None, None),
     cmap: str = "inferno",
@@ -536,6 +550,8 @@ def plotvar(
     :param vmax: vmax for colour bar, defaults to None
     :param yinv: Invert y axis, defaults to False
     :param title: Plot title, defaults to "UEDGE data"
+    :param logscale: Log scale for colourbar
+    :param linthresh: Linthresh for log scale colourbar (only used if vmin < 0, i.e. SymLog norm is required)
     :param subtitle: Plot subtitle, defaults to None
     :param show: Call plt.show(), defaults to True
     """
@@ -551,14 +567,24 @@ def plotvar(
         nx = rm.shape[0] - 2
         ny = rm.shape[1] - 2
 
-    for iy in np.arange(0, ny + 2):
-        for ix in np.arange(0, nx + 2):
-            rcol = rm[ix, iy, [1, 2, 4, 3]]
-            zcol = zm[ix, iy, [1, 2, 4, 3]]
-            rcol.shape = (4, 1)
-            zcol.shape = (4, 1)
-            polygon = Polygon(np.column_stack((rcol, zcol)))
-            patches.append(polygon)
+    if geometry:
+        for iy in np.arange(0, ny + 2):
+            for ix in np.arange(0, nx + 2):
+                rcol = rm[ix, iy, [1, 2, 4, 3]]
+                zcol = zm[ix, iy, [1, 2, 4, 3]]
+                rcol.shape = (4, 1)
+                zcol.shape = (4, 1)
+                polygon = Polygon(np.column_stack((rcol, zcol)))
+                patches.append(polygon)
+    else:
+        for iy in np.arange(0, ny + 2):
+            for ix in np.arange(0, nx + 2):
+                rcol = np.array([ix - 0.5, ix - 0.5, ix + 0.5, ix + 0.5])
+                zcol = np.array([iy - 0.5, iy + 0.5, iy + 0.5, iy - 0.5])
+                rcol.shape = (4, 1)
+                zcol.shape = (4, 1)
+                polygon = Polygon(np.column_stack((rcol, zcol)))
+                patches.append(polygon)
 
     # -is there a better way to cast input data into 2D array?
     vals = np.zeros((nx + 2) * (ny + 2))
@@ -575,7 +601,12 @@ def plotvar(
         vmin = np.min(var)
 
     if logscale:
-        norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
+        if vmin < 0:
+            norm = matplotlib.colors.SymLogNorm(
+                vmin=vmin, vmax=vmax, linthresh=linthresh
+            )
+        else:
+            norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
     else:
         norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     ###p = PatchCollection(patches, cmap=cmap, norm=norm)
@@ -589,7 +620,10 @@ def plotvar(
 
     p.set_array(np.array(vals))
 
-    fig, ax = plt.subplots(1)
+    if geometry:
+        fig, ax = plt.subplots(1, figsize=(4, 5))
+    else:
+        fig, ax = plt.subplots(1, figsize=(6, 3))
 
     ax.add_collection(p)
     ax.autoscale_view()
@@ -600,8 +634,12 @@ def plotvar(
 
     fig.suptitle(title)
     ax.set_title(subtitle, loc="left")
-    ax.set_xlabel("R [m]")
-    ax.set_ylabel("Z [m]")
+    if geometry:
+        ax.set_xlabel("R [m]")
+        ax.set_ylabel("Z [m]")
+    else:
+        ax.set_xlabel("Poloidal index")
+        ax.set_ylabel("Radial index")
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
 
@@ -616,11 +654,12 @@ def plotvar(
     # else:
     #    plt.axes().set_aspect('auto', 'datalim')
 
-    # if show:
-    #     plt.show()
+    fig.tight_layout()
 
     if savepath is not None:
         fig.savefig(savepath)
+
+    plt.show()
 
 
 def animatevar(
@@ -766,13 +805,16 @@ def plot_q_drifts(
 
 
 def plot_fni_drifts(
-    logscale_linewidth: bool = True, linewidth_mult: float = 1e-21, **kwargs
+    logscale_linewidth: bool = True,
+    linewidth_mult: float = 1e-21,
+    index: int = 0,
+    **kwargs,
 ):
     """Plot ExB and grad B drift ion particle flux streamlines
 
     :param kwargs: Keyword arguments for streamplotvar()
     """
-    fni_ExB, fni_gradB = pp.get_fni_drifts()
+    fni_ExB, fni_gradB = pp.get_fni_drifts(index=index)
     streamplotvar(
         fni_ExB[:, :, 0],
         fni_ExB[:, :, 1],
@@ -818,6 +860,7 @@ def streamplotvar(
     logscale=False,
     title: str = "",
     show_mask: bool = False,
+    show_sptrx: bool = False,
     **kwargs,
 ):
     """Plot streamlines of a vector variable with poloidal and radial components (pol, rad). Based on the function streamline() in UETools (https://github.com/LLNL/UETOOLS/blob/aaa823222ecc8ae76647aa8bf5299cd9804b61b1/src/uetools/UePlot/Plot.py)
@@ -1110,6 +1153,24 @@ def streamplotvar(
     #     c=yinterp.flatten(),
     # )
 
+    if show_sptrx:
+        if "snowflake75" in str(com.geometry[0]):
+            r_sptrx1 = com.rm[: com.ixrb[0], com.iysptrx1[0], 3]
+            z_sptrx1 = com.zm[: com.ixrb[0], com.iysptrx1[0], 3]
+            r_sptrx2 = list(com.rm[: com.ixpt1[0] + 1, com.iysptrx2[0], 2])
+            z_sptrx2 = list(com.zm[: com.ixpt1[0] + 1, com.iysptrx2[0], 2])
+            r_sptrx2 += list(
+                com.rm[com.ixpt2[0] + 1 : com.ixrb[0] + 1, com.iysptrx2[0], 2]
+            )
+            z_sptrx2 += list(
+                com.zm[com.ixpt2[0] + 1 : com.ixrb[0] + 1, com.iysptrx2[0], 2]
+            )
+            r_sptrx2b = list(com.rm[com.ixlb[1] :, com.iysptrx2[0], 2])
+            z_sptrx2b = list(com.zm[com.ixlb[1] :, com.iysptrx2[0], 2])
+            ax.plot(r_sptrx1, z_sptrx1, color="black", zorder=0)
+            ax.plot(r_sptrx2, z_sptrx2, color="black", linestyle="--", zorder=0)
+            ax.plot(r_sptrx2b, z_sptrx2b, color="black", linestyle="--", zorder=0)
+
 
 def plot_SOL_fits():
     """Plot fits to the midplane electron temperature decay length, the midplane electron density decay length, and the target heat flux Eich fit"""
@@ -1255,23 +1316,21 @@ def plotpslice(iy: int):
     """
 
     ch = np.zeros((com.nx + 2, com.ny + 2))
+    ch[:, iy] = 0.9
 
-    ch[:, iy] = 1
-
-    plotvar(ch, cmap="viridis_r")
+    plotvar(ch, cmap="Greys", vmax=1, vmin=0, mesh=True)
 
 
-def plotrslice(ix: list):
+def plotrslice(ix: list, **plotvar_kwargs):
     """Highlight a specific radial slice
 
     :param iy: Poloidal index
     """
 
     ch = np.zeros((com.nx + 2, com.ny + 2))
+    ch[ix, :] = 0.9
 
-    ch[ix, :] = 1
-
-    plotvar(ch, cmap="viridis")
+    plotvar(ch, cmap="Greys", vmax=1, vmin=0, mesh=True, **plotvar_kwargs)
 
 
 def plotrprof(
@@ -1307,10 +1366,14 @@ def plotrprof(
         xcoord = com.rm[ix0, :, 0] - com.rm[ix0, com.iysptrx1[0], 0]
         xlabel = r"$R-R_{sep}$"
 
-    # if use_psin:
-    #     psin = (com.psi - com.simagx) / (com.sibdry - com.simagx)
-    #     xcoord = psin[ix0, :, 0]
-    #     xlabel = "Psi_norm"
+    if use_psin:
+        if com.sibdry != 0 and com.simagx != 0:
+            psin = (com.psi - com.simagx) / (com.sibdry - com.simagx)
+            xcoord = psin[ix0, :, 0]
+            xlabel = r"$\psi_n$"
+        else:
+            xcoord = com.psi[ix0, :, 0]
+            xlabel = r"$\psi$"
     # else:
     #     xcoord = com.rm[ix0, :, 0] - com.rm[ix0, com.iysptrx, 0]
     #     # xcoord = com.rm[bbb.ixmp, :, 0] - com.rm[bbb.ixmp, com.iysptrx, 0]
