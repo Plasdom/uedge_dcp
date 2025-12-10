@@ -243,11 +243,13 @@ def set_carbon_imps(fluid_neuts: bool = False, evolve_mom_eqs: bool = False):
 
     # CARBON
 
-    bbb.isngon[1] = 1  # turns on impurity gas
     bbb.n0g[1] = 1.0e17
     if fluid_neuts:
+        bbb.isngon[1] = 0
         bbb.isupgon[1] = 1  # impurity gas is diffusive
+        # TODO: Do we need to modify com.ziin, make a variable nnsp = com.nhsp+1, etc with this option = True?
     else:
+        bbb.isngon[1] = 1  # turns on impurity gas
         bbb.isupgon[1] = 0  # impurity gas is diffusive
     bbb.recycp[1] = 1.0e-10  # recycling of impurity species
     bbb.recycw[1] = 1.0e-10  # recycling at wall, do not set =0!
@@ -283,6 +285,75 @@ def set_carbon_imps(fluid_neuts: bool = False, evolve_mom_eqs: bool = False):
     bbb.isnwconi[com.nhsp : com.nhsp + 6] = 3
     bbb.nwimin[com.nhsp : com.nhsp + 6] = 1.0e7
     bbb.nwomin[com.nhsp : com.nhsp + 6] = 1.0e7
+
+    bbb.rcxighg = 0.0  # force charge exchange small
+    bbb.kelighi[bbb.iigsp - 1] = 5.0e-16  # sigma-v for elastic collisions
+    bbb.kelighg[bbb.iigsp - 1] = 5.0e-16
+    com.iscxfit = 2  # use reduced Maggi CX fits
+
+    # Impurity data files
+    bbb.ismctab = 2  # =1 use multi charge tables from INEL
+    # =2 Use multi charge tables from Strahl
+    com.nzdf = 1
+    com.mcfilename = ["b2frates_C"]  # , "b2frates_Li_v4"]
+    com.isrtndep = 1
+
+
+def set_carbon_imps_2(fluid_neuts: bool = False, evolve_mom_eqs: bool = False):
+    """Apply carbon impurity settings"""
+    # Impurities
+    bbb.isimpon = 6
+    com.ngsp = 2
+    com.nzsp[0] = 6  # NUMBER OF IMPURITY SPECIES FOR CARBON
+
+    # CARBON
+
+    bbb.n0g[1] = 1.0e17
+    if fluid_neuts:
+        bbb.isngon[1] = 0
+        bbb.isupgon[1] = 1  # impurity gas is diffusive
+        ncsp = 7
+        bbb.ziin[com.nhsp : com.nhsp + ncsp] = np.array(
+            [0, 1, 2, 3, 4, 5, 6]
+        )  # charge of each impurity species
+    else:
+        bbb.isngon[1] = 1  # turns on impurity gas
+        bbb.isupgon[1] = 0  # impurity gas is diffusive
+        ncsp = 6
+        bbb.ziin[com.nhsp : com.nhsp + ncsp] = np.array(
+            [1, 2, 3, 4, 5, 6]
+        )  # charge of each impurity species
+    bbb.recycp[1] = 1.0e-10  # recycling of impurity species
+    bbb.recycw[1] = 1.0e-10  # recycling at wall, do not set =0!
+    bbb.ngbackg[1] = 1.0e10  # background density for impurity gas
+
+    # Carbon ion species
+    bbb.allocate()  # allocate space for source arrays,
+    # and also ni and up for impurity species.
+    bbb.minu[com.nhsp : com.nhsp + ncsp] = 12.0  # mass in AMU
+    bbb.znuclin[0 : com.nhsp] = 1  # nuclear charge
+    bbb.znuclin[com.nhsp : com.nhsp + ncsp] = 6  # nuclear charge of impurities
+    bbb.nzbackg = 1.0e10  # background density for impurities
+    bbb.n0[com.nhsp : com.nhsp + ncsp] = 1.0e17  # global density normalization
+    bbb.inzb = 2  # parameter for implementing impurity floor
+    bbb.isbohmms = 0  # Bohm BC at plates for impurities
+    bbb.isnicore[com.nhsp : com.nhsp + ncsp] = 0  # =0 for core flux BC =curcore
+    # =1 for fixed core density BC
+    # =3 constant ni on core,
+    #           total flux=curcore
+    if evolve_mom_eqs:
+        bbb.nusp_imp = 6
+    bbb.recycc[1] = 0  # no core recycling of carbon gas
+
+    bbb.curcore[com.nhsp : com.nhsp + ncsp] = 0.0
+
+    bbb.isnwcono[com.nhsp : com.nhsp + ncsp] = (
+        3  # 1 - set to nwallo ; 3 - set to (1/n)dn/dy = 1/lyni
+    )
+    bbb.nwallo = 1.0e12
+    bbb.isnwconi[com.nhsp : com.nhsp + ncsp] = 3
+    bbb.nwimin[com.nhsp : com.nhsp + ncsp] = 1.0e7
+    bbb.nwomin[com.nhsp : com.nhsp + ncsp] = 1.0e7
 
     bbb.rcxighg = 0.0  # force charge exchange small
     bbb.kelighi[bbb.iigsp - 1] = 5.0e-16  # sigma-v for elastic collisions
@@ -374,6 +445,7 @@ def set_transport_coeffs_DM(
         dist_from_sepx = -(r_omp - r_sepx)
     else:
         dist_from_sepx = r_omp - r_sepx
+    # dist_from_sepx = com.yyc
 
     # Interpolate diffusion coeffs onto radial cells
     k_radial = k_interp_func(dist_from_sepx)
@@ -388,44 +460,54 @@ def set_transport_coeffs_DM(
         k_use[:, iy] = k_radial[iy]
         d_use[:, iy] = d_radial[iy]
 
-        # Set the values below the X-point
-        if "snowflake15" in geometry:
-            for iy in range(com.ny + 2):
-                if ky_div is None:
-                    k_use[: com.ixpt1[0] + 1, iy] = k_radial[-1]
-                    k_use[com.ixpt2[1] + 1 :, iy] = k_radial[-1]
-                    k_use[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, iy] = k_radial[-1]
-                else:
-                    k_use[: com.ixpt1[0] + 1, iy] = ky_div
-                    k_use[com.ixpt2[1] + 1 :, iy] = ky_div
-                    k_use[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, iy] = ky_div
-                if dif_div is None:
-                    d_use[: com.ixpt1[0] + 1, iy] = d_radial[-1]
-                    d_use[com.ixpt2[1] + 1 :, iy] = d_radial[-1]
-                    d_use[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, iy] = d_radial[-1]
-                else:
-                    d_use[: com.ixpt1[0] + 1, iy] = dif_div
-                    d_use[com.ixpt2[1] + 1 :, iy] = dif_div
-                    d_use[com.ixpt2[0] + 1 : com.ixpt1[1] + 1, iy] = dif_div
-        elif "dnull" in geometry:
-            ix_mask = com.isixcore == True
-            for iy in range(com.ny + 2):
-                k_use[~ix_mask, iy] = k_radial[-1]
-                d_use[~ix_mask, iy] = d_radial[-1]
+    # Set the values below the X-point
+    if "snowflake15" in geometry:
+        ix_mask = com.isixcore == 1
+        if ky_div is None:
+            k_use[~ix_mask, :] = k_radial[-1]
+            k_use[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, com.iysptrx1[0] + 1 :] = (
+                k_radial[-1]
+            )
         else:
-            for iy in range(com.ny + 2):
-                if ky_div is None:
-                    k_use[: com.ixpt1[0] + 1, iy] = k_radial[-1]
-                    k_use[com.ixpt2[0] + 1 :, iy] = k_radial[-1]
-                else:
-                    k_use[: com.ixpt1[0] + 1, iy] = ky_div
-                    k_use[com.ixpt2[0] + 1 :, iy] = ky_div
-                if dif_div is None:
-                    d_use[: com.ixpt1[0] + 1, iy] = d_radial[-1]
-                    d_use[com.ixpt2[0] + 1 :, iy] = d_radial[-1]
-                else:
-                    d_use[: com.ixpt1[0] + 1, iy] = dif_div
-                    d_use[com.ixpt2[0] + 1 :, iy] = dif_div
+            k_use[~ix_mask, :] = ky_div
+            k_use[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, com.iysptrx1[0] + 1 :] = ky_div
+        if dif_div is None:
+            d_use[~ix_mask, :] = d_radial[-1]
+            d_use[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, com.iysptrx1[0] + 1 :] = (
+                d_radial[-1]
+            )
+        else:
+            d_use[~ix_mask, :] = dif_div
+            d_use[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, com.iysptrx1[0] + 1 :] = dif_div
+    elif "dnull" in geometry:
+        ix_mask = com.isixcore == True
+        for iy in range(com.ny + 2):
+            k_use[~ix_mask, iy] = k_radial[-1]
+            d_use[~ix_mask, iy] = d_radial[-1]
+    elif "snowflake135" in geometry:
+        ix_mask = com.isixcore == 1
+        if ky_div is None:
+            k_use[~ix_mask, :] = k_radial[-1]
+        else:
+            k_use[~ix_mask, :] = ky_div
+        if dif_div is None:
+            d_use[~ix_mask, :] = d_radial[-1]
+        else:
+            d_use[~ix_mask, :] = dif_div
+    else:
+        for iy in range(com.ny + 2):
+            if ky_div is None:
+                k_use[: com.ixpt1[0] + 1, iy] = k_radial[-1]
+                k_use[com.ixpt2[0] + 1 :, iy] = k_radial[-1]
+            else:
+                k_use[: com.ixpt1[0] + 1, iy] = ky_div
+                k_use[com.ixpt2[0] + 1 :, iy] = ky_div
+            if dif_div is None:
+                d_use[: com.ixpt1[0] + 1, iy] = d_radial[-1]
+                d_use[com.ixpt2[0] + 1 :, iy] = d_radial[-1]
+            else:
+                d_use[: com.ixpt1[0] + 1, iy] = dif_div
+                d_use[com.ixpt2[0] + 1 :, iy] = dif_div
 
     # Assign calculated values in UEDGE
     target_ky = k_use
@@ -1028,7 +1110,7 @@ def scan_variable(
     :param index: Index of variable to change if array type
     :param savedir: Directory to save intermediate steps, defaults to "variable_scan"
     :param num_steps: Number of steps to take, defaults to 10
-    :param step_method: Step method, options: "linear", "geometric", "inverse", defaults to "linear"
+    :param method: Step method, options: "linear", "geometric", "inverse", defaults to "linear"
     :param rundt_kwargs: Keyword arguments passed to rundt()
     """
 
@@ -1040,19 +1122,24 @@ def scan_variable(
         vals = np.linspace(initial_val, target, num_steps)
     elif method == "inverse":
         vals = 1 / np.linspace(1 / initial_val, 1 / target, num_steps)
+    elif method == "geometric":
+        vals = np.geomspace(initial_val, target, num_steps)
 
     if not os.path.exists(savedir):
         os.mkdir(savedir)
 
     # Save the values in a text file for reference
-    percs = [100 * i / (num_steps - 1) for i in range(len(vals))]
-    np.savetxt(
-        os.path.join(savedir, "scan_values.txt"),
-        np.array([percs, vals]).T,
-        header="Percentage\tValue",
-        fmt=["%.2f", "%.15e"],
-        delimiter="\t",
-    )
+    try:
+        percs = [100 * i / (num_steps - 1) for i in range(len(vals))]
+        np.savetxt(
+            os.path.join(savedir, "scan_values.txt"),
+            np.array([percs, vals]).T,
+            header="Percentage\tValue",
+            fmt=["%.2f", "%.15e"],
+            delimiter="\t",
+        )
+    except:
+        print("Could not save values file, probably because variable is an array.")
 
     # Save the initial step
     hdf5_save(os.path.join(savedir, "progress_{:.2f}pc.hdf5".format(0.0)))
