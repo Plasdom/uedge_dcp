@@ -986,16 +986,23 @@ def set_drifts_maxim(b0_scale: float = 10):
     bbb.allocate()
 
 
-def initial_short_run(dt: float = 1e-12):
+def initial_short_run(dt: float = 1e-12, update_jac: bool = True):
     """Do an initial short run prior to calling rundt()"""
     bbb.restart = 1
     bbb.isbcwdt = 1
     bbb.dtreal = dt
-    bbb.ftol = 1e-3
     bbb.icntnunk = 0
     bbb.itermx = 30
+    if update_jac is False:
+        bbb.issfon = 0
+        bbb.ftol = 1e20
+    else:
+        bbb.ftol = 1e-3
     bbb.exmain()
     bbb.itermx = 7
+    if update_jac is False:
+        bbb.issfon = 1
+        bbb.ftol = 1e-6
 
 
 def add_carbon():

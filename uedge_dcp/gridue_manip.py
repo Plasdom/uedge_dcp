@@ -131,6 +131,8 @@ class UESave:
         for v in self.varlist:
             self.vars[v] = ds["bbb"][v][:]
 
+        ds.close()
+
 
 from scipy.spatial import cKDTree as KDTree
 

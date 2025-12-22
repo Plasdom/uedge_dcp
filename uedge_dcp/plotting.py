@@ -2,7 +2,7 @@ import matplotlib.colors
 from uedge import *
 import matplotlib.pyplot as plt
 import uedge_dcp.post_processing as pp
-from uedge_dcp.gridue_manip import Grid
+from uedge_dcp.gridue_manip import Grid, UESave
 from numpy import zeros, sum, transpose, mgrid, nan, array, cross, nan_to_num
 from scipy.interpolate import griddata, bisplrep
 from matplotlib.patches import Polygon
@@ -11,6 +11,243 @@ import matplotlib
 from matplotlib.collections import PatchCollection
 from matplotlib.widgets import Slider
 import numpy as np
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+
+def plot_IRVB_comparison(case: str, timestamp_ms: float, uefile: str = None):
+
+    rlim = [com.rm.min(), com.rm.max()]
+    zlim = [com.zm.min(), com.zm.max()]
+
+    # Read in IRVB data
+    fn = (
+        "/Users/power8/Documents/04_mastu_modelling/experimental_profiles/IRVB/IRVB-MASTU_shot-"
+        + str(case)
+        + "_FAST.npz"
+    )
+    a = np.load(fn)
+    a.allow_pickle = True
+    b = dict(a)
+    y = b["first_pass"].all()
+    z = b["first_pass"][()]["inverted_dict"]
+    grid_resolution = 2
+    t = z[str(grid_resolution)]["time_full_binned_crop"]
+    tidx = np.where(t >= timestamp_ms / 1000)
+    troi = tidx[0][0]
+    d = z[str(grid_resolution)]["inverted_data"]
+    r = z[str(grid_resolution)]["geometry"]["R"]
+    z = z[str(grid_resolution)]["geometry"]["Z"]
+
+    irvb = np.transpose(d[troi, :, :])
+
+    # Set colorscale limits
+    vmin = 10**4.5
+    vmax = max(bbb.prad.max(), irvb[np.where(~np.isnan(irvb))].max())
+
+    # Plot the UEDGE data
+    fig, ax = plt.subplots(ncols=2, sharex=True, sharey=True)
+    plotvar(
+        bbb.prad,
+        ax=ax[0],
+        logscale=True,
+        vmin=vmin,
+        vmax=vmax,
+        subtitle="UEDGE",
+        xlim=rlim,
+        ylim=zlim,
+    )
+
+    # Add the UEDGE mesh to the IRVB plot
+    if uefile is None:
+        rm = com.rm
+        zm = com.zm
+        nx = com.nx
+        ny = com.ny
+    else:
+        try:
+            grid = Grid(geometry="NA", filename=uefile)
+            rm = grid.r
+            zm = grid.z
+            nx = grid.nx
+            ny = grid.ny
+        except:
+            save = UESave("uefile")
+            rm = save.rm
+            zm = save.zm
+            nx = rm.shape[0]
+            ny = rm.shape[1]
+    for iy in np.arange(0, ny + 2):
+        for ix in np.arange(0, nx + 2):
+            ax[1].plot(
+                rm[ix, iy, [1, 2, 4, 3, 1]],
+                zm[ix, iy, [1, 2, 4, 3, 1]],
+                color="gray",
+                linewidth=0.1,
+                # alpha=0.5,
+            )
+
+    # Plot the IRVB data
+    norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
+    c = ax[1].pcolormesh(r, z, irvb, cmap="inferno", norm=norm)
+    cax = fig.add_axes([0.91, 0.1, 0.03, 0.8])
+    cb = fig.colorbar(c, cax=cax)
+    cb.set_label("Wm$^{-3}$", labelpad=-10)
+    ax[1].set_xlabel("R [m]")
+    ax[1].set_ylabel("Z [m]")
+    ax[1].set_title("IRVB (UEDGE mesh overlaid)", fontsize=10, loc="left")
+    ax[1].set_aspect("equal")
+    ax[1].set_xlim(rlim)
+    ax[1].set_ylim(zlim)
+
+
+def plot_force_balance(iy=com.iysptrx1[0] + 1, ifl=2):
+    fb = pp.calc_forcebalance(bbb, com)
+    fig, ax = plt.subplots(1)
+    ax.plot(-fb["F_drag"][:, iy, ifl], label="F_drag")
+    ax.plot(fb["F_gradp"][:, iy, ifl], label="F_gradp")
+    ax.plot(fb["F_thermal"][:, iy, ifl], label="F_thermal")
+    ax.plot(fb["F_pot"][:, iy, ifl], label="F_pot")
+    sum = (
+        -fb["F_drag"][:, iy, ifl]
+        + fb["F_gradp"][:, iy, ifl]
+        + fb["F_thermal"][:, iy, ifl]
+        + fb["F_pot"][:, iy, ifl]
+    )
+    ax.plot(sum, color="black", label="sum")
+    ax.legend()
+    ax.grid()
+    ax.set_yscale("symlog", linthresh=1)
+
+
+def plot_midplane_profiles(
+    case: str = "49464",
+    timestamp_ms: float = 840,
+    savepath: str = None,
+    ixmp: int = None,
+    ixmp_is_above_mp: bool = False,
+    r_shift: float = 0.0,
+    ax=None,
+    r_sep: float | None = None,
+    label: str = None,
+):
+    """Plot midplane profiles and compaare with experimental data from Thomspon scattering diagnostic
+
+    :param case: Case number, defaults to "49464"
+    :param timestamp_ms: Timestamp of equilibrium in ms, defaults to 840
+    :param savepath: Savepath of UEDGE hdf5 file, defaults to None (in which case variables from current UEDGE instance will be used)
+    :param ixmp: Index of midplane cells, defaults to None
+    :param ixmp_is_above_mp: Whether the midplane cells are actually just above the midplane, defaults to False
+    :param r_shift: Shift in R coordinate to match UEDGE and experimental profiles, defaults to 0.0
+    :param ax: Axes of previous plot if comparing, defaults to None
+    :param r_sep: R coordinate of separatrix, defaults to None
+    :param label: Label for plot, defaults to None
+    :return: Axes
+    """
+    # Get Thompson scattering data
+    ts = np.load(
+        "/Users/power8/Documents/04_mastu_modelling/experimental_profiles/Thompson scattering/ts_"
+        + case
+        + ".npz"
+    )
+    start_R_idx = -20
+    nearest_timestamps = abs(timestamp_ms - 1000 * ts["time"]).argsort()[:5]
+    exp_ne = np.array(
+        [
+            ts["R"][nearest_timestamps, start_R_idx:],
+            ts["ned"][nearest_timestamps, start_R_idx:],
+        ]
+    ).T
+    exp_Te = np.array(
+        [
+            ts["R"][nearest_timestamps, start_R_idx:],
+            ts["te"][nearest_timestamps, start_R_idx:],
+        ]
+    ).T
+
+    if savepath is not None:
+        ue = UESave(savepath)
+        if ue.vars["ni"].shape[-1] == 8:
+            ne = ue.vars["ni"][:, :, 0] + np.sum(
+                np.array([iz * ue.vars["ni"][:, :, iz + 1] for iz in range(1, 7)]),
+                axis=0,
+            )
+        else:
+            ne = ue.vars["ni"][:, :, 0]
+        Te = ue.vars["te"] / bbb.ev
+        rm = ue.rm
+        zm = ue.zm
+    else:
+        ne = bbb.ne
+        Te = bbb.te / bbb.ev
+        rm = com.rm
+        zm = com.zm
+
+    if ixmp is None:
+        ixmp = bbb.ixmp
+
+    r_mp, ne_mp = pp.get_midplane_vals(ne, rm, zm, ixmp, ixmp_is_above_mp)
+    r_mp, Te_mp = pp.get_midplane_vals(Te, rm, zm, ixmp, ixmp_is_above_mp)
+    r_mp += r_shift
+
+    if ax is None:
+        _, ax = plt.subplots(2, 1, sharex=True)
+        axes_provided = False
+        c = "black"
+        if label is None:
+            l = "UEDGE"
+        else:
+            l = label
+        el = "Experiment"
+    else:
+        axes_provided = True
+        c = "gray"
+        if label is None:
+            l = "UEDGE 2"
+        else:
+            l = label
+        el = None
+
+    if r_sep is not None:
+        ax[0].axvline(
+            x=r_sep + r_shift, label="UEDGE $r_{sep}$", linestyle="--", color="gray"
+        )
+        ax[1].axvline(x=r_sep + r_shift, linestyle="--", color="gray")
+
+    if not axes_provided:
+        for it in range(exp_ne.shape[1]):
+            ax[0].plot(
+                exp_ne[:, it, 0],
+                exp_ne[:, it, 1],
+                marker="x",
+                linestyle="--",
+                color="red",
+                alpha=0.5,
+            )
+        ax[0].plot([], [], "--", color="red", label=el)
+        ax[0].grid()
+    ax[0].plot(r_mp, ne_mp, marker="x", linestyle="-", color=c, label=l, zorder=999)
+    ax[0].set_ylabel("$n_e$ [m$^{-3}$]")
+    ax[0].legend()
+
+    if not axes_provided:
+        for it in range(exp_ne.shape[1]):
+            ax[1].plot(
+                exp_Te[:, it, 0],
+                exp_Te[:, it, 1],
+                marker="x",
+                linestyle="--",
+                color="red",
+                alpha=0.5,
+            )
+        ax[1].plot([], [], "--", color="red", label=el)
+        ax[1].set_xlabel("R [m]")
+        ax[1].set_ylabel("$T_e$ [eV]")
+        ax[1].grid()
+    ax[1].plot(r_mp, Te_mp, marker="x", linestyle="-", color=c, label=l, zorder=999)
+
+    plt.subplots_adjust(hspace=0.1)
+
+    return ax
 
 
 def plotrad(**plotvar_kwargs):
@@ -414,6 +651,8 @@ def comparemesh(
     gridfile2: str,
     geom1: str = "snowflake75",
     geom2: str = "snowflake75",
+    label1: str = "Grid 1",
+    label2: str = "Grid 2",
 ):
     """Plot two UEDGE grids on top of each other for comparison
 
@@ -439,7 +678,7 @@ def comparemesh(
 
     for iy in np.arange(0, g2.ny + 2):
         for ix in np.arange(0, g2.nx + 2):
-            ax.plot(
+            ax[1].plot(
                 g2.r[ix, iy, [1, 2, 4, 3, 1]],
                 g2.z[ix, iy, [1, 2, 4, 3, 1]],
                 color="red",
@@ -447,8 +686,8 @@ def comparemesh(
                 linewidth=0.5,
             )
 
-    ax.plot([], [], color="black", label="Grid 1")
-    ax.plot([], [], color="red", linestyle="--", label="Grid 2")
+    ax.plot([], [], color="black", label=label1)
+    ax.plot([], [], color="red", linestyle="--", label=label2)
     ax.legend(loc="upper right")
 
 
@@ -499,7 +738,7 @@ def plotmesh(
     # fig.suptitle('UEDGE grid')
     # plt.title('UEDGE grid')
     # ax.set_subtitle(title)
-    ax.set_title(title, loc="left")
+    ax.set_title(title, loc="left", fontsize=10)
     ax.grid(False)
 
     if xlim:
@@ -536,6 +775,7 @@ def plotvar(
     ylim: tuple = (None, None),
     cmap: str = "inferno",
     savepath: str = None,
+    ax=None,
 ):
     """Plot a variable on the UEDGE mesh. Variable must have same dimensions as grid.
 
@@ -620,20 +860,29 @@ def plotvar(
 
     p.set_array(np.array(vals))
 
-    if geometry:
-        fig, ax = plt.subplots(1, figsize=(4, 5))
+    if ax is None:
+        ax_provided = False
     else:
-        fig, ax = plt.subplots(1, figsize=(6, 3))
+        ax_provided = True
+
+    if ax_provided is False:
+        if geometry:
+            fig, ax = plt.subplots(1, figsize=(4, 5))
+        else:
+            fig, ax = plt.subplots(1, figsize=(6, 3))
 
     ax.add_collection(p)
     ax.autoscale_view()
-    plt.colorbar(p, label=label)
+    if ax_provided is False:
+        fig.colorbar(p, ax=ax, label=label)
+        # plt.colorbar(p, label=label)
 
     if iso:
-        plt.axis("equal")  # regular aspect-ratio
+        ax.set_aspect("equal")  # regular aspect-ratio
 
-    fig.suptitle(title)
-    ax.set_title(subtitle, loc="left")
+    if ax_provided is False:
+        fig.suptitle(title)
+    ax.set_title(subtitle, loc="left", fontsize=10)
     if geometry:
         ax.set_xlabel("R [m]")
         ax.set_ylabel("Z [m]")
@@ -654,12 +903,15 @@ def plotvar(
     # else:
     #    plt.axes().set_aspect('auto', 'datalim')
 
-    fig.tight_layout()
+    if ax_provided is False:
+        fig.tight_layout()
 
     if savepath is not None:
         fig.savefig(savepath)
 
     plt.show()
+
+    return ax
 
 
 def animatevar(
@@ -734,7 +986,7 @@ def animatevar(
         plt.axis("equal")  # regular aspect-ratio
 
     fig.suptitle(title)
-    ax.set_title(subtitle, loc="left")
+    ax.set_title(subtitle, loc="left", fontsize=10)
     ax.set_xlabel("R [m]")
     ax.set_ylabel("Z [m]")
     ax.set_xlim(xlim)

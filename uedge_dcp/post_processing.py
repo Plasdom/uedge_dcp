@@ -6,6 +6,221 @@ from scipy.interpolate import interp1d
 from scipy.special import erfc
 
 
+def calc_forcebalance(bbb, com, prefix="forcebalance"):
+    """
+    Calculate impurity force-balance terms using UEDGE (bbb) variables.
+
+    Parameters
+    ----------
+    bbb : object
+        UEDGE bbb module (Fortran-Python interface)
+    cutlo : float
+        Small number to avoid division by zero
+
+    Returns
+    -------
+    forcebalance : dict
+        Dictionary containing impurity velocity and force components
+    """
+
+    # Load UEDGE variables
+    # -----------------------------
+    ev = bbb.ev
+    misotope = bbb.misotope
+    natomic = bbb.natomic
+    mi = bbb.mi
+    zi = bbb.zi
+    rrv = com.rrv
+    gpex = bbb.gpex
+    gpix = bbb.gpix
+    gtex = bbb.gtex
+    gtix = bbb.gtix
+    pri = bbb.pri
+    qe = bbb.qe
+    alfe = bbb.alfe
+    betai = bbb.betai
+    ex = bbb.ex
+    vol = com.vol
+    up = bbb.up
+    volmsor = bbb.volmsor
+    loglambda = bbb.loglambda
+    pondomfpari_use = bbb.pondomfpari_use
+
+    fricflf = bbb.fricflf
+    cftaud = bbb.cftaud
+    zi_in = bbb.ziin
+    is_z0_imp_const = bbb.is_z0_imp_const
+    z0_imp_const = getattr(bbb, "z0_imp_const", 0.0)
+
+    ni = bbb.ni
+    ne = bbb.ne
+    te = bbb.te
+    ti = bbb.ti
+    zeff = bbb.zeff
+    cutlo = com.cutlo
+
+    # -----------------------------
+    # Array sizes
+    # -----------------------------
+    shape = ne.shape
+    nchstate = bbb.nchstate
+    nion = np.sum(natomic)
+
+    # -----------------------------
+    # Allocate arrays
+    # -----------------------------
+    den = np.zeros((misotope, nchstate) + shape)
+    gradt = np.zeros_like(den)
+    gradp = np.zeros_like(den)
+
+    upi = np.zeros(shape + (nion,))
+    upi_gradp = np.zeros_like(upi)
+    upi_alfe = np.zeros_like(upi)
+    upi_betai = np.zeros_like(upi)
+    upi_ex = np.zeros_like(upi)
+    upi_volmsor = np.zeros_like(upi)
+    taudeff = np.zeros_like(upi)
+
+    F_drag = np.zeros_like(upi)
+    F_thermal = np.zeros_like(upi)
+    F_gradp = np.zeros_like(upi)
+    F_pot = np.zeros_like(upi)
+    nu = np.zeros_like(upi)
+
+    # -----------------------------
+    # Base plasma quantities
+    # -----------------------------
+    den[0, 0] = ne
+    den[1, 0] = ni[:, :, 0]
+
+    tempa = te
+    tif = ti
+
+    gradp[0, 0] = rrv * gpex
+    gradt[0, 0] = rrv * gtex
+
+    # -----------------------------
+    # Flux limiter
+    # -----------------------------
+    ltmax = np.minimum(
+        np.abs(tempa / (rrv * gtex + cutlo)),
+        np.abs(tif / (rrv * gtix + cutlo)),
+        np.abs(den[0, 0] * tempa / (rrv * gpex + cutlo)),
+    )
+
+    lmfpe = 1e16 * (tempa / ev) ** 2 / (den[0, 0] + cutlo)
+    lmfpi = 1e16 * (tif / ev) ** 2 / (den[0, 0] + cutlo)
+
+    ltmax = np.minimum(ltmax, np.abs((pri[:, :, 0]) / (rrv * gpix[:, :, 0] + cutlo)))
+
+    flxlimf = 1.0 / (1.0 + fricflf * ((lmfpe + lmfpi) / (ltmax + cutlo)) ** 2)
+
+    # -----------------------------
+    # Impurity loop
+    # -----------------------------
+    ifld = 0
+    zeffv = zeff
+
+    for misa in range(2, misotope):
+        for nz in range(natomic[misa]):
+            ifld += 1
+
+            # Skip neutrals
+            if zi_in[ifld] < 1e-10:
+                continue
+
+            den[misa, nz] = ni[:, :, ifld]
+
+            gradt[misa, nz] = rrv * gtix
+            gradp[misa, nz] = rrv * gpix[:, :, ifld] - pondomfpari_use[:, :, ifld]
+
+            if is_z0_imp_const == 0:
+                z0 = den[0, 0] * zeffv / (den[1, 0] + cutlo) - 1.0
+            else:
+                z0 = z0_imp_const
+
+            taud = (
+                cftaud
+                * 5.624e54
+                * mi[0] ** 0.5
+                * mi[ifld]
+                * tif**1.5
+                / (
+                    loglambda * den[misa, nz] * zi[ifld] ** 2 * (mi[0] + mi[ifld])
+                    + cutlo
+                )
+            )
+
+            taudeff[:, :, ifld] = (
+                flxlimf
+                * taud
+                * den[misa, nz]
+                * (1 + 2.65 * z0)
+                * (1 + 0.285 * z0)
+                / (den[0, 0] * (1 + 0.24 * z0) * (1 + 0.93 * z0) + cutlo)
+            )
+
+            # -----------------------------
+            # Force components
+            # -----------------------------
+            fac = taudeff[:, :, ifld] / mi[0]
+
+            upi_gradp[:, :, ifld] = -gradp[misa, nz] / (den[misa, nz] + cutlo) * fac
+            upi_alfe[:, :, ifld] = alfe[ifld] * gradt[0, 0] * fac
+            upi_betai[:, :, ifld] = betai[ifld] * gradt[misa, nz] * fac
+            upi_ex[:, :, ifld] = qe * zi[ifld] * rrv * ex * fac
+            upi_volmsor[:, :, ifld] = (
+                volmsor[:, :, ifld] / (den[misa, nz] * vol + cutlo)
+            ) * fac
+
+            # -----------------------------
+            # Total impurity velocity
+            # -----------------------------
+            upi[:, :, ifld] = (
+                up[:, :, 0]
+                + upi_gradp[:, :, ifld]
+                + upi_alfe[:, :, ifld]
+                + upi_betai[:, :, ifld]
+                + upi_ex[:, :, ifld]
+                + upi_volmsor[:, :, ifld]
+            )
+            nu[:, :, ifld] = 1 / taudeff[:, :, ifld]
+
+            F_drag[:, :, ifld] = (
+                (den[misa, nz] + cutlo)
+                * mi[0]
+                * nu[:, :, ifld]
+                * (upi[:, :, ifld] - up[:, :, 0])
+            )
+            F_gradp[:, :, ifld] = -gradp[misa, nz]
+            F_thermal[:, :, ifld] = (
+                alfe[ifld] * gradt[0, 0] + betai[ifld] * gradt[misa, nz]
+            ) * (den[misa, nz] + cutlo)
+            F_pot[:, :, ifld] = qe * zi[ifld] * rrv * ex * (den[misa, nz] + cutlo)
+
+    # -----------------------------
+    # Output dictionary
+    # -----------------------------
+    forcebalance = {
+        "upi": upi,
+        "up": up[:, :, 0],
+        "upi_gradp": upi_gradp,
+        "upi_alfe": upi_alfe,
+        "upi_betai": upi_betai,
+        "upi_ex": upi_ex,
+        "upi_volmsor": upi_volmsor,
+        "taudeff": taudeff,
+        "F_drag": F_drag,
+        "F_gradp": F_gradp,
+        "F_thermal": F_thermal,
+        "F_pot": F_pot,
+    }
+    for key, val in forcebalance.items():
+        np.save(f"{prefix}_{key}.npy", val)
+
+    return forcebalance_toggle if False else forcebalance
+
+
 def integrate_var_pol(var: np.ndarray):
     """Integrate an input variable along flux tubes
 
