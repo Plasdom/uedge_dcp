@@ -15,6 +15,7 @@ setuptools.setup(
         "shapely",
         "netCDF4",
         "freeqdsk>=0.5",
+        "pyaml",
     ],
     author="Dominic Power",
     author_email="power8@llnl.gov",

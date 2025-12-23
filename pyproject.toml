@@ -11,6 +11,6 @@ description = "UEDGE tools"
 readme = "README.md"
 requires-python = ">=3.7"
 dependencies = ['h5py', 'mppl', 'forthon', 'uedge', 'matplotlib', 
-                'numpy', 'scipy', 'pandas', 'shapely', 'netCDF4']
+                'numpy', 'scipy', 'pandas', 'shapely', 'netCDF4', 'pyaml']
 
 version = "0.1"
