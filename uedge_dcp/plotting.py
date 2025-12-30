@@ -1,3 +1,4 @@
+from xml.etree.ElementInclude import include
 import matplotlib.colors
 from uedge import *
 import matplotlib.pyplot as plt
@@ -129,6 +130,7 @@ def plot_midplane_profiles(
     ax=None,
     r_sep: float | None = None,
     label: str = None,
+    num_timestamps: int = 3,
 ):
     """Plot midplane profiles and compaare with experimental data from Thomspon scattering diagnostic
 
@@ -150,17 +152,21 @@ def plot_midplane_profiles(
         + ".npz"
     )
     start_R_idx = -20
-    nearest_timestamps = abs(timestamp_ms - 1000 * ts["time"]).argsort()[:5]
+    nearest_timestamps = abs(timestamp_ms - 1000 * ts["time"]).argsort()[
+        :num_timestamps
+    ]
     exp_ne = np.array(
         [
             ts["R"][nearest_timestamps, start_R_idx:],
             ts["ned"][nearest_timestamps, start_R_idx:],
+            ts["ne_error"][nearest_timestamps, start_R_idx:],
         ]
     ).T
     exp_Te = np.array(
         [
             ts["R"][nearest_timestamps, start_R_idx:],
             ts["te"][nearest_timestamps, start_R_idx:],
+            ts["te_error"][nearest_timestamps, start_R_idx:],
         ]
     ).T
 
@@ -215,10 +221,12 @@ def plot_midplane_profiles(
 
     if not axes_provided:
         for it in range(exp_ne.shape[1]):
-            ax[0].plot(
+            ax[0].errorbar(
                 exp_ne[:, it, 0],
                 exp_ne[:, it, 1],
-                marker="x",
+                exp_ne[:, it, 2],
+                marker="o",
+                markersize=2.5,
                 linestyle="--",
                 color="red",
                 alpha=0.5,
@@ -231,10 +239,12 @@ def plot_midplane_profiles(
 
     if not axes_provided:
         for it in range(exp_ne.shape[1]):
-            ax[1].plot(
+            ax[1].errorbar(
                 exp_Te[:, it, 0],
                 exp_Te[:, it, 1],
-                marker="x",
+                exp_Te[:, it, 2],
+                marker="o",
+                markersize=2.5,
                 linestyle="--",
                 color="red",
                 alpha=0.5,
@@ -585,14 +595,23 @@ def plot_diff_coeffs():
     fig.tight_layout()
 
 
-def plot_q_plates():
+def plot_q_plates(include_radiation=True, project=True):
     """Plot the total heat flux delivered to each target plate (snowflake geometry is assumed)"""
     bbb.plateflux()
-    q_odata = (bbb.sdrrb + bbb.sdtrb).T
-    q_idata = (bbb.sdrlb + bbb.sdtlb).T
+    if include_radiation:
+        q_odata = (bbb.sdrrb + bbb.sdtrb).T
+        q_idata = (bbb.sdrlb + bbb.sdtlb).T
+    else:
+        q_odata = (bbb.sdtrb).T
+        q_idata = (bbb.sdtlb).T
     if com.nxpt == 1:
-        q1 = q_odata[0]
-        q2 = q_idata[0]
+        if project:
+            rrf = pp.getrrf()
+            q1 = q_odata[0] / rrf[com.ixrb[0] + 1, :]
+            q2 = q_idata[0] / rrf[com.ixlb[0], :]
+        else:
+            q1 = q_odata[0]
+            q2 = q_idata[0]
         r1 = com.yyrb.T[0]
         r2 = com.yylb.T[0]
 
@@ -608,10 +627,17 @@ def plot_q_plates():
         fig.tight_layout()
 
     elif com.nxpt == 2:
-        q1 = q_odata[0]
-        q2 = q_idata[1]
-        q3 = q_odata[1]
-        q4 = q_idata[0]
+        if project:
+            rrf = pp.getrrf()
+            q1 = q_odata[0] / rrf[com.ixrb[0] + 1, :]
+            q2 = q_idata[1] / rrf[com.ixlb[1] + 1, :]
+            q3 = q_odata[1] / rrf[com.ixrb[1], :]
+            q4 = q_idata[0] / rrf[com.ixrb[0], :]
+        else:
+            q1 = q_odata[0]
+            q2 = q_idata[1]
+            q3 = q_odata[1]
+            q4 = q_idata[0]
         r1 = com.yyrb.T[0]
         r2 = com.yylb.T[1]
         r3 = com.yyrb.T[1]
@@ -641,7 +667,11 @@ def plot_q_plates():
 
         [ax[i].grid() for i in range(4)]
         [ax[i].legend(loc="upper right") for i in range(4)]
-        ax[1].set_ylabel("Heat flux [MWm$^{-2}$]")
+        # ax[1].set_ylabel("Heat flux [MWm$^{-2}$]")
+        if project:
+            ax[1].set_ylabel(r"$q_{\perp}$ [MWm$^{-2}$]")
+        else:
+            ax[1].set_ylabel(r"$q_{\parallel}$ [MWm$^{-2}$]")
         ax[-1].set_xlabel("Distance along target plate [m]")
         fig.tight_layout()
 
@@ -678,7 +708,7 @@ def comparemesh(
 
     for iy in np.arange(0, g2.ny + 2):
         for ix in np.arange(0, g2.nx + 2):
-            ax[1].plot(
+            ax.plot(
                 g2.r[ix, iy, [1, 2, 4, 3, 1]],
                 g2.z[ix, iy, [1, 2, 4, 3, 1]],
                 color="red",
@@ -1424,7 +1454,7 @@ def streamplotvar(
             ax.plot(r_sptrx2b, z_sptrx2b, color="black", linestyle="--", zorder=0)
 
 
-def plot_SOL_fits():
+def plot_SOL_fits(ix_SP=None, include_radiation=True, method="exp"):
     """Plot fits to the midplane electron temperature decay length, the midplane electron density decay length, and the target heat flux Eich fit"""
     y = com.yyc[com.iysptrx1[0] :]
     Te = bbb.te[bbb.ixmp, com.iysptrx1[0] :] / bbb.ev
@@ -1470,24 +1500,38 @@ def plot_SOL_fits():
         q_fit_full,
         s_fit,
         eich_lqo,
-    ) = pp.eich_exp_shahinul_odiv_final()
-    ax[2].plot(
-        s_omp,
-        1e-6 * q_omp,
-        marker="x",
-        color="black",
-        linestyle="--",
+    ) = pp.eich_exp_shahinul_odiv_final(
+        ix_SP=ix_SP, include_radiation=include_radiation
     )
-    ax[2].plot(
-        s_fit,
-        1e-6 * q_fit_full,
-        color="red",
-        linestyle="--",
-        label=r"Eich fit: $\lambda_q$ = {:.2f} mm".format(eich_lqo),
-    )
+    if method == "eich":
+        ax[2].plot(
+            s_omp,
+            1e-6 * q_omp,
+            marker="x",
+            color="black",
+            linestyle="--",
+        )
+        ax[2].plot(
+            s_fit,
+            1e-6 * q_fit_full,
+            color="red",
+            linestyle="--",
+            label=r"Eich fit: $\lambda_q$ = {:.2f} mm".format(eich_lqo),
+        )
+    elif method == "exp":
+        ax[2].plot(
+            xq, qparo / 1e6, marker="x", linestyle="--", color="black", label=r"UEDGE"
+        )
+        ax[2].plot(
+            xq[omax:],
+            expfun(xq[omax:], *qofit) / 1e6,
+            c="red",
+            ls="--",
+            label=r"Exp Fit: $\lambda_q$ = %.2f mm" % lqo,
+        )
 
-    ax[2].set_xlabel(r"$r - r_{sep}$ [m]")
     ax[2].set_ylabel(r"$q_{\perp}$ [MWm$^{-2}$]")
+    ax[2].set_xlabel(r"$r - r_{sep}$ [m]")
     ax[2].grid()
     ax[2].legend()
 

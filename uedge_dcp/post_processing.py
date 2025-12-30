@@ -632,7 +632,12 @@ def midplane_exp_fit():
 
 
 def eich_exp_shahinul_odiv_final(
-    omp: bool = False, ixmp: int = None, save_prefix="lambdaq_result", SP=1
+    omp: bool = False,
+    ixmp: int = None,
+    save_prefix="lambdaq_result",
+    SP=1,
+    ix_SP=None,
+    include_radiation=True,
 ):
     """Written by Shahinul Islam
 
@@ -653,28 +658,34 @@ def eich_exp_shahinul_odiv_final(
         bbb.feex + bbb.feix + 0.5 * bbb.mi[0] * bbb.up[:, :, 0] ** 2 * bbb.fnix[:, :, 0]
     )
     rrf = getrrf()
-    ix_SP = com.ixrb[0]
-    q_para_omp = ppar[ixmp, :-1] / com.sx[ixmp, :-1] / rrf[ixmp, :-1]
-    q_para_odiv = ppar[ix_SP, :-1] / com.sx[ix_SP, :-1] / rrf[ix_SP, :-1]
-    q_data = bbb.sdrrb + bbb.sdtrb
-    q_ldata = bbb.sdrlb + bbb.sdtlb
-    if "snowflake" in str(com.geometry):
-        if SP == 1:
-            q_perp_odiv = q_data[:, 0].reshape(-1)[:-1]
-        elif SP == 2:
-            q_perp_odiv = q_ldata[:, 1].reshape(-1)[:-1]
-        elif SP == 3:
-            q_perp_odiv = q_data[:, 1].reshape(-1)[:-1]
-        elif SP == 4:
-            q_perp_odiv = q_ldata[:, 0].reshape(-1)[:-1]
-    else:
-        if SP == 1:
-            q_perp_odiv = q_data.reshape(-1)[:-1]
-        elif SP == 2:
-            q_perp_odiv = q_ldata.reshape(-1)[:-1]
+    # if ix_SP is None:
+    #     if include_radiation:
+    #         q_data = bbb.sdrrb + bbb.sdtrb
+    #         q_ldata = bbb.sdrlb + bbb.sdtlb
+    #     else:
+    #         q_data = bbb.sdtrb
+    #         q_ldata = bbb.sdtlb
+    #     if "snowflake" in str(com.geometry):
+    #         if SP == 1:
+    #             q_perp_odiv = q_data[:, 0].reshape(-1)[:-1]
+    #         elif SP == 2:
+    #             q_perp_odiv = q_ldata[:, 1].reshape(-1)[:-1]
+    #         elif SP == 3:
+    #             q_perp_odiv = q_data[:, 1].reshape(-1)[:-1]
+    #         elif SP == 4:
+    #             q_perp_odiv = q_ldata[:, 0].reshape(-1)[:-1]
+    #     else:
+    #         if SP == 1:
+    #             q_perp_odiv = q_data.reshape(-1)[:-1]
+    #         elif SP == 2:
+    #             q_perp_odiv = q_ldata.reshape(-1)[:-1]
+    # else:
+    #     q_para_odiv = ppar[ix_SP, :-1] / com.sx[ix_SP, :-1] / rrf[ix_SP, :-1]
+    #     q_perp_odiv = q_para_odiv
 
+    # q_para_omp = ppar[ixmp, :-1] / com.sx[ixmp, :-1] / rrf[ixmp, :-1]
     # s_omp = com.yyrb[:-1]
-    q_fit = q_para_omp if omp else q_para_odiv
+    # q_fit = q_para_omp if omp else q_para_odiv
 
     # s_omp = s_omp.flatten()
     # q_fit = q_fit.flatten()
@@ -682,6 +693,44 @@ def eich_exp_shahinul_odiv_final(
     # interp_fun = interp1d(s_omp, q_fit, kind="cubic", fill_value="extrapolate")
     # s_interp = np.linspace(s_omp.min(), s_omp.max(), 300)
     # q_interp = interp_fun(s_interp)
+
+    # Get heat flux at target
+    if ix_SP is None:
+        if include_radiation:
+            q_data = bbb.sdrrb + bbb.sdtrb
+            q_ldata = bbb.sdrlb + bbb.sdtlb
+        else:
+            q_data = bbb.sdtrb
+            q_ldata = bbb.sdtlb
+        if "snowflake" in str(com.geometry):
+            if SP == 1:
+                ix_SP = com.ixrb[0]
+                q_perp_odiv = q_data[:, 0].reshape(-1)[:-1] / rrf[ix_SP + 1, :-1]
+            elif SP == 2:
+                ix_SP = com.ixlb[1]
+                q_perp_odiv = q_ldata[:, 1].reshape(-1)[:-1] / rrf[ix_SP + 1, :-1]
+            elif SP == 3:
+                ix_SP = com.ixrb[1] + 1
+                q_perp_odiv = q_data[:, 1].reshape(-1)[:-1] / rrf[ix_SP - 1, :-1]
+            elif SP == 4:
+                ix_SP = com.ixlb[0] + 1
+                q_perp_odiv = q_ldata[:, 0].reshape(-1)[:-1] / rrf[ix_SP - 1, :-1]
+        else:
+            if SP == 1:
+                ix_SP = com.ixrb[0]
+                q_perp_odiv = q_data.reshape(-1)[:-1] / rrf[ix_SP + 1, :-1]
+            elif SP == 2:
+                ix_SP = com.ixlb[0] + 1
+                q_perp_odiv = q_ldata.reshape(-1)[:-1] / rrf[ix_SP - 1, :-1]
+    else:
+        q_perp_odiv = ppar[ix_SP, :-1] / com.sx[ix_SP, :-1]  # / rrf[ix_SP, :-1]
+    q_para_odiv = ppar[ix_SP, :-1] / com.sx[ix_SP, :-1] / rrf[ix_SP, :-1]
+
+    # Get heat flux at midplane
+    q_para_omp = ppar[ixmp, :-1] / com.sx[ixmp, :-1] / rrf[ixmp, :-1]
+
+    q_fit = q_para_omp if omp else q_para_odiv
+
     iy_sep = com.iysptrx + 1
 
     # === Exponential Fit ===
@@ -742,7 +791,7 @@ def eich_exp_shahinul_odiv_final(
     p0 = [0.003, 0.002, q0_guess, s0_guess]
     bounds = (
         [0.0005, 0.0005, 1e4, s_fit.min() - 0.01],
-        [0.02, 0.02, 1e9, s_fit.max() + 0.01],
+        [0.02, 0.04, 1e9, s_fit.max() + 0.01],
     )
 
     try:
