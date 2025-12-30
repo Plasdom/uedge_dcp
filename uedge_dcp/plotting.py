@@ -131,6 +131,7 @@ def plot_midplane_profiles(
     r_sep: float | None = None,
     label: str = None,
     num_timestamps: int = 3,
+    ts_data_filepath: str | None = None,
 ):
     """Plot midplane profiles and compaare with experimental data from Thomspon scattering diagnostic
 
@@ -146,11 +147,14 @@ def plot_midplane_profiles(
     :return: Axes
     """
     # Get Thompson scattering data
-    ts = np.load(
-        "/Users/power8/Documents/04_mastu_modelling/experimental_profiles/Thompson scattering/ts_"
-        + case
-        + ".npz"
-    )
+    if ts_data_filepath is None:
+        ts = np.load(
+            "/Users/power8/Documents/04_mastu_modelling/experimental_profiles/Thompson scattering/ts_"
+            + case
+            + ".npz"
+        )
+    else:
+        ts = np.load(ts_data_filepath)
     start_R_idx = -20
     nearest_timestamps = abs(timestamp_ms - 1000 * ts["time"]).argsort()[
         :num_timestamps
