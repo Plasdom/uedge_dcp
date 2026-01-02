@@ -7,6 +7,25 @@ import subprocess
 import pickle
 import yaml
 import numpy as np
+import uedge_dcp.post_processing as pp
+
+
+def get_umbrella_diff(r_cz, Dx):
+
+    R_xpt, Z_xpt = pp.get_xpt_positions()
+
+    dist_xpt1 = np.sqrt(
+        (com.rm[:, :, 0] - R_xpt[0]) ** 2 + (com.zm[:, :, 0] - Z_xpt[0]) ** 2
+    )
+    dist_xpt2 = np.sqrt(
+        (com.rm[:, :, 0] - R_xpt[1]) ** 2 + (com.zm[:, :, 0] - Z_xpt[1]) ** 2
+    )
+
+    D_add = Dx * (
+        np.exp(-((dist_xpt1 / r_cz) ** 2)) + np.exp(-((dist_xpt2 / r_cz) ** 2))
+    )
+
+    return D_add
 
 
 def set_geometry(
@@ -390,6 +409,143 @@ def set_carbon_sputtering(fhaasz: float = 0):
 
 
 def set_transport_coeffs_DM(
+    k_x: list = [-0.025, -0.02, -0.0025, 0.0004],
+    k_v: list = [2.5, 0.1, 0.1, 10.0],
+    d_x: list = [-0.025, -0.01, 0.0004, 0.01],
+    d_v: list = [2, 0.1, 0.1, 0.5],
+    inplace: bool = False,
+    dif_div: float = None,
+    ky_div: float = None,
+    travis: float = 1,
+    reverse_r_mp: bool = False,
+):
+    """Set radially-dependent transport coefficients
+
+    :param k_x: Radial coordinates (x-axis) of piecewise-linear function for thermal transport coeffs vs. radial location, defaults to [-0.025, -0.02, -0.0025, 0.0004]
+    :param k_v: Values (y-axis) of piecewise-linear function for thermal transport coeffs vs. radial location, defaults to [2.5, 0.1, 0.1, 10.0]
+    :param d_x: Radial coordinates (x-axis) of piecewise-linear function for particle transport coeffs vs. radial location, defaults to [-0.025, -0.01, 0.0004, 0.01]
+    :param d_v: Values (y-axis) of piecewise-linear function for particle transport coeffs vs. radial location, defaults to [2, 0.1, 0.1, 0.5]
+    :param inplace: Whether to modify the UEDGE values in place or return as arrays, defaults to False
+    :param dif_div: Value of particle transport coeffs to use below X-point, defaults to None
+    :param ky_div: Value of thermal transport coeffs to use below X-point, defaults to None
+    :param travis: Spatially-uniform viscosity, defaults to 1
+    :return: If inplace=True, return nothing. If inplace=False, return ky, dn arrays
+    """
+    runid = 1
+    grd.readgrid("gridue", runid)
+    geometry = str(com.geometry[0])
+
+    # Set/reset other transport coeffs before calculating D_y and K_y
+    bbb.kye = 0  # 0.5		#chi_e for radial elec energy diffusion
+    bbb.kyi = 0  # 0.5		#chi_i for radial ion energy diffusion
+    bbb.difni[0] = 0  # .2  		#D for radial hydrogen diffusion        difniv()
+    bbb.difni = 0
+    bbb.travis[0] = travis  # eta_a for radial ion momentum diffusion
+    bbb.difutm = 1.0  # toroidal diffusivity for potential
+
+    # Now calculate D_y and K_y
+    # Define the functional form of diffusion coeffs vs. distance from separatrix
+    from scipy.interpolate import interp1d
+
+    # k_x = [-0.025, -0.02, -0.0025, 0.0004]
+    # k_v = [2.5, 0.1, 0.1, 10.0]
+    k_interp_func = interp1d(k_x, k_v, fill_value=(k_v[0], k_v[-1]), bounds_error=False)
+
+    # d_x = [-0.025, -0.01, 0.0004, 0.01]
+    # d_v = [2, 0.1, 0.1, 0.5]
+    d_interp_func = interp1d(d_x, d_v, fill_value=(d_v[0], d_v[-1]), bounds_error=False)
+
+    # Find distance from separatrix for each radial cell
+    r_sepx = com.rm[bbb.ixmp, com.iysptrx1[0], 3]
+    r_omp = 0.5 * (com.rm[bbb.ixmp, :, 3] + com.rm[bbb.ixmp, :, 1])
+    psi_sepx = com.psi[bbb.ixmp, com.iysptrx1[0], 3]
+    psi_omp = 0.5 * (com.psi[bbb.ixmp, :, 3] + com.psi[bbb.ixmp, :, 1])
+    if reverse_r_mp:
+        dist_from_sepx = -(r_omp - r_sepx)
+    else:
+        dist_from_sepx = r_omp - r_sepx
+    # dist_from_sepx = com.yyc
+
+    # Interpolate diffusion coeffs onto radial cells
+    k_radial = k_interp_func(dist_from_sepx)
+    d_radial = d_interp_func(dist_from_sepx)
+
+    # Apply to all poloidal cells
+    k_use = np.zeros((com.nx + 2, com.ny + 2))
+    d_use = np.zeros((com.nx + 2, com.ny + 2))
+
+    # Set the values in the core and SOL
+    for iy in range(com.ny + 2):
+        k_use[:, iy] = k_radial[iy]
+        d_use[:, iy] = d_radial[iy]
+
+    # Set the values below the X-point
+    if "snowflake15" in geometry:
+        ix_mask = com.isixcore == 1
+        if ky_div is None:
+            k_use[~ix_mask, :] = k_radial[-1]
+            k_use[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, com.iysptrx1[0] + 1 :] = (
+                k_radial[-1]
+            )
+        else:
+            k_use[~ix_mask, :] = ky_div
+            k_use[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, com.iysptrx1[0] + 1 :] = ky_div
+        if dif_div is None:
+            d_use[~ix_mask, :] = d_radial[-1]
+            d_use[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, com.iysptrx1[0] + 1 :] = (
+                d_radial[-1]
+            )
+        else:
+            d_use[~ix_mask, :] = dif_div
+            d_use[com.ixpt1[1] + 1 : com.ixpt2[1] + 1, com.iysptrx1[0] + 1 :] = dif_div
+    elif "dnull" in geometry:
+        ix_mask = com.isixcore == True
+        for iy in range(com.ny + 2):
+            k_use[~ix_mask, iy] = k_radial[-1]
+            d_use[~ix_mask, iy] = d_radial[-1]
+    elif "snowflake135" in geometry:
+        ix_mask = com.isixcore == 1
+        if ky_div is None:
+            k_use[~ix_mask, :] = k_radial[-1]
+        else:
+            k_use[~ix_mask, :] = ky_div
+        if dif_div is None:
+            d_use[~ix_mask, :] = d_radial[-1]
+        else:
+            d_use[~ix_mask, :] = dif_div
+    else:
+        for iy in range(com.ny + 2):
+            if ky_div is None:
+                k_use[: com.ixpt1[0] + 1, iy] = k_radial[-1]
+                k_use[com.ixpt2[0] + 1 :, iy] = k_radial[-1]
+            else:
+                k_use[: com.ixpt1[0] + 1, iy] = ky_div
+                k_use[com.ixpt2[0] + 1 :, iy] = ky_div
+            if dif_div is None:
+                d_use[: com.ixpt1[0] + 1, iy] = d_radial[-1]
+                d_use[com.ixpt2[0] + 1 :, iy] = d_radial[-1]
+            else:
+                d_use[: com.ixpt1[0] + 1, iy] = dif_div
+                d_use[com.ixpt2[0] + 1 :, iy] = dif_div
+
+    # Assign calculated values in UEDGE
+    target_ky = k_use
+    target_dif = np.zeros(bbb.dif_use.shape)
+    for isp in range(target_dif.shape[-1]):
+        target_dif[:, :, isp] = d_use
+
+    if inplace:
+        bbb.kye_use = target_ky
+        bbb.kyi_use = target_ky
+        bbb.dif_use = target_dif
+        return
+    else:
+        return target_ky, target_dif
+
+
+def set_transport_coeffs_DM_BO(
+    bbb,
+    com,
     k_x: list = [-0.025, -0.02, -0.0025, 0.0004],
     k_v: list = [2.5, 0.1, 0.1, 10.0],
     d_x: list = [-0.025, -0.01, 0.0004, 0.01],

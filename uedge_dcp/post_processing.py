@@ -6,6 +6,36 @@ from scipy.interpolate import interp1d
 from scipy.special import erfc
 
 
+def get_xpt_positions():
+    """Get positions of X-point(s)
+
+    :return: R_xpt[xpt1, ...], Z_xpt[xpt1, ...]
+    """
+    if com.nxpt == 1:
+        raise Exception("Not yet implemented for nxpt = 1")
+    elif com.nxpt == 2:
+        if ("snowflake45" in str(com.geometry[0])) or (
+            "snowflake75" in str(com.geometry[0])
+        ):
+            R_xpt1 = com.rm[com.ixpt1[0], com.iysptrx1[0], 4]
+            Z_xpt1 = com.zm[com.ixpt1[0], com.iysptrx1[0], 4]
+            R_xpt2 = com.rm[com.ixpt1[1], com.iysptrx2[1], 4]
+            Z_xpt2 = com.zm[com.ixpt1[1], com.iysptrx2[1], 4]
+            R_xpt = [R_xpt1, R_xpt2]
+            Z_xpt = [Z_xpt1, Z_xpt2]
+        elif "snowflake135" in str(com.geometry[0]):
+            R_xpt2 = com.rm[com.ixpt1[0], com.iysptrx1[0], 4]
+            Z_xpt2 = com.zm[com.ixpt1[0], com.iysptrx1[0], 4]
+            R_xpt1 = com.rm[com.ixpt1[1], com.iysptrx2[1], 2]
+            Z_xpt1 = com.zm[com.ixpt1[1], com.iysptrx2[1], 2]
+            R_xpt = [R_xpt1, R_xpt2]
+            Z_xpt = [Z_xpt1, Z_xpt2]
+        else:
+            raise Exception("Not yet implemented for other geometries")
+
+    return R_xpt, Z_xpt
+
+
 def calc_forcebalance(bbb, com, prefix="forcebalance"):
     """
     Calculate impurity force-balance terms using UEDGE (bbb) variables.
