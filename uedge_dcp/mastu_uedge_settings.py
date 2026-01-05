@@ -253,7 +253,9 @@ def set_h_gas(fluid_neuts: bool = True):
         com.nhsp = 1
 
 
-def set_carbon_imps(fluid_neuts: bool = False, evolve_mom_eqs: bool = False):
+def set_carbon_imps(
+    fluid_neuts: bool = False, evolve_mom_eqs: bool = False, fixed_nzcore: bool = False
+):
     """Apply carbon impurity settings"""
     # Impurities
     bbb.isimpon = 6
@@ -287,10 +289,15 @@ def set_carbon_imps(fluid_neuts: bool = False, evolve_mom_eqs: bool = False):
     bbb.n0[com.nhsp : com.nhsp + 6] = 1.0e17  # global density normalization
     bbb.inzb = 2  # parameter for implementing impurity floor
     bbb.isbohmms = 0  # Bohm BC at plates for impurities
-    bbb.isnicore[com.nhsp : com.nhsp + 6] = 0  # =0 for core flux BC =curcore
+    if fixed_nzcore:
+        bbb.isnicore[com.nhsp : com.nhsp + 6] = 1
+        bbb.ncore[com.nhsp : com.nhsp + 6] = 1e10
+    else:
+        bbb.isnicore[com.nhsp : com.nhsp + 6] = 0  # =0 for core flux BC =curcore
     # =1 for fixed core density BC
     # =3 constant ni on core,
     #           total flux=curcore
+
     if evolve_mom_eqs:
         bbb.nusp_imp = 6
     bbb.recycc[1] = 0  # no core recycling of carbon gas
