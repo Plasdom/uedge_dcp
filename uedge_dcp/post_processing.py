@@ -1,9 +1,350 @@
+from tkinter import NO
+from xml.etree.ElementInclude import include
 import numpy as np
 from uedge import *
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.interpolate import interp1d
 from scipy.special import erfc
+from uedge_dcp.gridue_manip import UESave
+import uetools
+
+
+def get_power_flows(c: uetools.Case | None = None):
+    """Calculate the energy flux channels leaving the simulation domain (via the outer wall, the target apltes, the PFR(s), and via volume radiation)
+
+    :param c: Uetools case
+    :return: Pin, Prad, Pplates, Pwall, Ppfr
+    """
+    # pbindy = np.sum(c.get("fniy") * 13.6 * 1.6022e-19, axis=2)
+    # mi = c.get("minu") * c.get("mp")
+    # f = c.get("feey") + c.get("feiy") + pbindy
+    # if c.get("isphion") == 1:
+    #     f += c.get("fqy") * c.get("phi")
+    # for isp in range(c.get("ni").shape[-1]):
+    #     f += np.sum(0.5 * mi[isp] * c.get("up", isp) ** 2 * c.get("fniy", isp))
+
+    # Pin = c.get("pcoree") + c.get("pcorei")
+
+    # try:
+    #     Prad = np.sum((c.get("prad") + c.get("pradhyd")) * c.get("vol"))
+    # except:
+    #     Prad = np.sum(c.get("pradhyd") * c.get("vol"))
+
+    # P1, P2, P3, P4 = get_Q_plates(c=c, include_radiation=False, verbose=False)
+    # Pplates = P1 + P2 + P3 + P4
+
+    # Pwall = np.sum(f[: c.get("ixrb")[0] + 1, c.get("ny")])
+
+    # pfr_flux = []
+    # isixcore = get_isixcore(c)
+    # for ix in range(c.get("ixrb")[0] + 1, c.get("nx")):
+    #     pfr_flux.append(f[ix, c.get("ny")])
+    # for ix in range(c.get("nx")):
+    #     if isixcore[ix] == 0:
+    #         pfr_flux.append(-f[ix, 0])
+    # Ppfr = np.sum(pfr_flux)
+
+    # print(" P_in [MW]    | P_plates [MW]| P_rad [MW]   | P_wall [MW]  | P_pfr [MW]  ")
+    # print(
+    #     " {:.2e}     | {:.2e}     | {:.2e}     | {:.2e}     | {:.2e}".format(
+    #         Pin / 1e6, Pplates / 1e6, Prad / 1e6, Pwall / 1e6, Ppfr / 1e6
+    #     )
+    # )
+    # print(
+    #     "    Delta = {:+.2f} MW (= {:+.2f}% of P_in)".format(
+    #         -(Pin - Pplates - Prad - Pwall - Ppfr) / 1e6,
+    #         -100 * (Pin - Pplates - Prad - Pwall - Ppfr) / Pin,
+    #     )
+    # )
+
+    # return Pin, Prad, Pplates, Pwall, Ppfr
+
+    if c is None:
+        feiy = bbb.feiy 
+        feey = bbb.feey 
+        ny = com.ny 
+        sy = com.sy 
+        minu = bbb.minu 
+        mp = bbb.mp 
+        up = bbb.up 
+        fniy = bbb.fniy
+        ni = bbb.ni
+        fqy = bbb.fqy
+        phi = bbb.phi 
+        prad = bbb.prad 
+        pradhyd = bbb.pradhyd
+        vol = com.vol
+        pcoree = bbb.pcoree
+        pcorei = bbb.pcorei
+    else:
+        feiy = c.get("feiy")
+        feey = c.get("feey")
+        ny = c.get("ny")
+        sy = c.get("sy")
+        minu = c.get("minu") 
+        mp = c.get("mp") 
+        up = c.get("up") 
+        fniy = c.get("fniy")
+        ni = c.get("ni")
+        fqy = c.get("fqy")
+        phi = c.get("phi") 
+        prad = c.get("prad") 
+        pradhyd = c.get("pradhyd")
+        vol = c.get("vol")
+        pcoree = c.get("pcoree")
+        pcorei = c.get("pcorei")
+
+
+    ebind = 13.6
+    ev = 1.6022e-19
+    fwall_nx = (feiy + feey)[:,ny] / sy[:,ny]
+    # return (feiy + feey)[:,ny]
+    for isp in range(ni.shape[-1]):
+        fwall_nx += (
+            0.5
+            * minu[isp]
+            * mp
+            * up[:,ny,isp] ** 2
+            * fniy[:,ny,isp]
+            / sy[:, ny]
+        )
+    fwall_nx += (fniy[:,ny,0] * ebind * ev) / sy[
+        :, ny
+    ]
+    try:
+        fwall_nx += (
+            fqy[:, ny] * phi[:, ny + 1]
+        ) / sy[:, ny]
+    except:
+        print("No fqy found.")
+    fwall_nx[0] = fwall_nx[1]
+    fwall_nx[-1] = fwall_nx[-2]
+
+    fwall_0 = (feiy + feey)[:, 0] /sy[:, 0]
+    for isp in range(ni.shape[-1]):
+        fwall_0 += (
+            0.5
+            * minu[isp]
+            * mp
+            * up[:, 0, isp] ** 2
+            * fniy[:, 0, isp]
+            / sy[:, 0]
+        )
+    fwall_0 += (fniy[:, 0,0] * ebind * ev) / sy[:, 0]
+    try:
+        fwall_0 += (fqy[:, 0] * phi[:, 1]) / sy[:, 0]
+    except:
+        print("No fqy found.")
+    fwall_0[0] = fwall_0[1]
+    fwall_0[-1] = fwall_0[-2]
+
+    Pin = pcoree + pcorei
+    # print(fwall_nx)
+    # print(fwall_0)
+    # print(np.sum(fwall_nx * sy[:, ny]), np.sum(fwall_0 * sy[:, 0]) - Pin)
+    Pwall = np.sum(fwall_nx * sy[:, ny])
+    Pwall += np.sum(fwall_0 * sy[:, 0]) - Pin
+    try:
+        Prad = np.sum((prad + pradhyd) * vol)
+    except:
+        print("No prad found.")
+        Prad = np.sum(pradhyd * vol)
+    
+    P_SPs = get_Q_plates(c=c, include_radiation=False, verbose=False)
+    Pplates = sum(P_SPs)
+
+    print(" P_in [MW]    | P_plates [MW]| P_rad [MW]   | P_wall [MW]  ")
+    print(
+        " {:.2e}     | {:.2e}     | {:.2e}     | {:.2e}     ".format(
+            Pin / 1e6, Pplates / 1e6, Prad / 1e6, Pwall / 1e6
+        )
+    )
+    print(
+        "    Delta = {:+.2f} MW (= {:+.2f}% of P_in)".format(
+            -(Pin - Pplates - Prad - Pwall) / 1e6,
+            -100 * (Pin - Pplates - Prad - Pwall) / Pin,
+        )
+    )
+    return Pin, Prad, Pplates, Pwall
+
+
+def get_isixcore(c: uetools.Case):
+    """Get isixcore array. Needed when this variable is not saved in hdf5 output.
+
+    :param c: Case
+    :return: array(nx+2)
+    """
+    geometry = c.get("geometry")[0].decode("UTF-8")
+    ixpt1 = c.get("ixpt1")
+    ixpt2 = c.get("ixpt2")
+    nx = c.get("nx")
+    isixcore = np.zeros(nx + 2, dtype=int)
+
+    if "snowflake15" in geometry:
+        for ix in range(nx + 2):
+            if (ix > ixpt1[0] and ix <= ixpt2[0]) or (ix > ixpt1[1] and ix <= ixpt2[1]):
+                isixcore[ix] = 1
+    elif "snowflake45" in geometry:
+        for ix in range(nx + 2):
+            if ix > ixpt1[0] and ix <= ixpt2[0]:
+                isixcore[ix] = 1
+    elif "snowflake75" in geometry:
+        for ix in range(nx + 2):
+            if ix > ixpt1[0] and ix <= ixpt2[0]:
+                isixcore[ix] = 1
+    elif "snowflake105" in geometry:
+        for ix in range(nx + 2):
+            if ix > ixpt2[0] and ix <= ixpt1[1]:
+                isixcore[ix] = 1
+    elif "snowflake135" in geometry:
+        for ix in range(nx + 2):
+            if ix > ixpt2[0] and ix <= ixpt1[1]:
+                isixcore[ix] = 1
+    elif "snowflake165" in geometry:
+        for ix in range(nx + 2):
+            if (ix > ixpt1[0] and ix <= ixpt2[0]) or (ix > ixpt1[1] and ix <= ixpt2[1]):
+                isixcore[ix] = 1
+
+    return isixcore
+
+
+def get_flux_tube(
+    var: np.ndarray,
+    iy: int,
+    ix_seed: int = 0,
+    direction: str = "p",
+    xaxis: str = "pol",
+    c: uetools.Case | None = None,
+):
+    """Get variables and coordinates along a single flux tube on UEDGE grid
+
+    :param var: _description_
+    :param iy: _description_
+    :param ix_seed: _description_, defaults to 0
+    :param direction: _description_, defaults to "p"
+    :param xaxis: _description_, defaults to "pol"
+    :param c: _description_, defaults to None
+    :return: _description_
+    """
+
+    # Retrieve grid variables
+    if c is None:
+        nx = com.nx
+        ixp1 = bbb.ixp1
+        ixm1 = bbb.ixm1
+        dx = com.dx
+        rr = com.rr
+    else:
+        nx = c.get("nx")
+        ixp1 = c.get("ixp1")
+        ixm1 = c.get("ixm1")
+        dx = 1 / c.get("gx")
+        bpol = c.get("bpol")
+        b = c.get("b")
+        rr = 0.25 * (
+            bpol[:, :, 1] / b[:, :, 1]
+            + bpol[:, :, 2] / b[:, :, 2]
+            + bpol[:, :, 3] / b[:, :, 3]
+            + bpol[:, :, 4] / b[:, :, 4]
+        )
+
+    # Get the indices of the flux tube
+    posx = ix_seed
+    posx_arr = []
+    for _ in range(1, nx + 2):
+        posx_prev = posx
+        if direction == "p":
+            posx = ixp1[posx_prev, iy]
+        else:
+            posx = ixm1[posx_prev, iy]
+        # Identify end of branch
+        if posx == posx_prev:
+            break
+        posx_arr.append(posx)
+    posx_arr = np.array(posx_arr)
+
+    # Retrieve variables along the flux tube
+    plotvar = np.zeros(len(posx_arr))
+    xpar = np.zeros(len(posx_arr))
+    xpol = np.zeros(len(posx_arr))
+    xind = []
+    plotvar[0] = var[0, iy]
+    xpar[0] = dx[0, iy] / rr[0, iy]
+    xpol[0] = dx[0, iy]
+    xind.append("0")
+    for ix, posx in enumerate(posx_arr):
+        plotvar[ix] = var[posx, iy]
+        xpar[ix] = xpar[ix - 1] + dx[posx, iy] / rr[posx, iy]
+        xpol[ix] = xpol[ix - 1] + dx[posx, iy]
+        xind.append(str(posx))
+
+    if xaxis == "pol":
+        x = xpol
+    elif xaxis == "par":
+        x = xpar
+    elif xaxis == "index":
+        x = xind
+
+    return posx_arr, x, plotvar
+
+
+def restore_flipped(savepath, vars=["te", "phi", "ti", "ni", "ng", "up"]):
+    """For snowflake cases, restore a UEDGE save file from a mirrored configuration. For example, the mirror configuration to a SF15 is a SF165.
+
+    Mirror pairs:
+        - SF15 / SF165
+        - SF45 / SF135
+        - SF75 / SF105
+
+    :param savepath: Filepath of UEDGE hdf5 save file
+    """
+
+    save = UESave(savepath)
+    if "te" in vars:
+        bbb.tes[: com.ixrb[0] + 2, :] = np.flip(
+            save.vars["te"][: com.ixrb[0] + 2, :], axis=0
+        )
+        bbb.tes[com.ixlb[1] :, :] = np.flip(save.vars["te"][com.ixlb[1] :, :], axis=0)
+    if "phi" in vars:
+        bbb.phis[: com.ixrb[0] + 2, :] = np.flip(
+            save.vars["phi"][: com.ixrb[0] + 2, :], axis=0
+        )
+        bbb.phis[com.ixlb[1] :, :] = np.flip(save.vars["phi"][com.ixlb[1] :, :], axis=0)
+    if "ti" in vars:
+        bbb.tis[: com.ixrb[0] + 2, :] = np.flip(
+            save.vars["ti"][: com.ixrb[0] + 2, :], axis=0
+        )
+        bbb.tis[com.ixlb[1] :, :] = np.flip(save.vars["ti"][com.ixlb[1] :, :], axis=0)
+    if "ni" in vars:
+        bbb.nis[: com.ixrb[0] + 2, :, :] = np.flip(
+            save.vars["ni"][: com.ixrb[0] + 2, :, :], axis=0
+        )
+        bbb.nis[com.ixlb[1] :, :, :] = np.flip(
+            save.vars["ni"][com.ixlb[1] :, :, :], axis=0
+        )
+    if "ng" in vars:
+        bbb.ngs[: com.ixrb[0] + 2, :] = np.flip(
+            save.vars["ng"][: com.ixrb[0] + 2, :], axis=0
+        )
+        bbb.ngs[com.ixlb[1] :, :] = np.flip(save.vars["ng"][com.ixlb[1] :, :], axis=0)
+    if "up" in vars:
+        bbb.ups[: com.ixrb[0] + 2, :] = np.flip(
+            save.vars["up"][: com.ixrb[0] + 2, :], axis=0
+        )
+        bbb.ups[com.ixlb[1] :, :] = np.flip(save.vars["up"][com.ixlb[1] :, :], axis=0)
+
+
+def get_pfr_vals_sf45(f):
+    """Get the values of input array f at the PFR boundaries. f is assumed to be a flux variable defined on the north face of cells
+
+    :param f:  a flux variable defined on the north face of cells
+    :return: Array of values of f on the PFR boundaries
+    """
+    pfr1 = f[com.ixrb[0] + 1 :, com.ny, ...]
+    pfr23 = f[np.where(com.isixcore == 0), 0, ...][0, ...]
+    pfr_vals = np.concatenate([pfr1, pfr23])
+    return pfr_vals
 
 
 def get_xpt_positions():
@@ -364,59 +705,178 @@ def get_dr_plate(r):
     return dr
 
 
-def get_q_plates() -> tuple[list[np.ndarray], list[np.ndarray]]:
+def get_q_plates(
+    c: uetools.Case | None = None,
+    xaxis: str = "r",
+    include_radiation: bool = True,
+    project: bool = False,
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
     """Get the heat flux and coordinates along the target for each strike point
 
     :return: [q1, q2, ...], [r1, r2, ...]
     """
-    bbb.plateflux()
-    if com.nxpt == 1:
-        q1 = q_odata[0]
-        q2 = q_idata[0]
-        r1 = com.yyrb.T[0]
-        r2 = com.yylb.T[0]
+    # Get heat flux and coordinate data from case/memory
+    if c is None:
+        bbb.plateflux()
+        if include_radiation:
+            q_odata = (bbb.sdrrb + bbb.sdtrb).T
+            q_idata = (bbb.sdrlb + bbb.sdtlb).T
+        else:
+            q_odata = bbb.sdtrb.T
+            q_idata = bbb.sdtlb.T
+        r_idata = com.yyrb.T
+        r_odata = com.yylb.T
+        if com.sibdry != 0 and com.simagx != 0:
+            psin = (com.psi - com.simagx) / (com.sibdry - com.simagx)
+        else:
+            psin = com.psi
+        ixlb = com.ixlb
+        ixrb = com.ixrb
+        nxpt = com.nxpt
+        rr = com.rr
+    else:
+        if include_radiation:
+            q_odata = (c.get("sdrrb") + c.get("sdtrb")).T
+            q_idata = (c.get("sdrlb") + c.get("sdtlb")).T
+        else:
+            q_odata = c.get("sdtrb").T
+            q_idata = c.get("sdtlb").T
+        r_idata = c.get("yyrb").T
+        r_odata = c.get("yylb").T
+        sibdry = c.get("sibdry")
+        simagx = c.get("simagx")
+        if sibdry is not None and simagx is not None:
+            if sibdry != 0 and simagx != 0:
+                psin = (c.get("psi") - c.get("simagx")) / (
+                    c.get("sibdry") - c.get("simagx")
+                )
+            else:
+                psin = c.get("psi")
+        else:
+            psin = c.get("psi")
+        ixlb = c.get("ixlb")
+        ixrb = c.get("ixrb")
+        nxpt = c.get("nxpt")
+        bpol = c.get("bpol")
+        b = c.get("b")
+        rr = 0.25 * (
+            bpol[:, :, 1] / b[:, :, 1]
+            + bpol[:, :, 2] / b[:, :, 2]
+            + bpol[:, :, 3] / b[:, :, 3]
+            + bpol[:, :, 4] / b[:, :, 4]
+        )
+
+    # Organise data into SPs
+    if nxpt == 1:
+        q1 = q_odata[0] / rr[ixrb[0] + 1] ** project
+        q2 = q_idata[0] / rr[ixlb[0]] ** project
+        if xaxis == "r":
+            r1 = r_idata[0]
+            r2 = r_odata[0]
+        elif xaxis == "psi":
+            r1 = psin[ixrb[0] + 1, :, 0]
+            r2 = psin[ixlb[0], :, 0]
         return [q1, q2], [r1, r2]
-    if com.nxpt == 2:
-        q_odata = (bbb.sdrrb + bbb.sdtrb).T
-        q_idata = (bbb.sdrlb + bbb.sdtlb).T
-        q1 = q_odata[0]
-        q2 = q_idata[1]
-        q3 = q_odata[1]
-        q4 = q_idata[0]
-        r1 = com.yyrb.T[0]
-        r2 = com.yylb.T[1]
-        r3 = com.yyrb.T[1]
-        r4 = com.yylb.T[0]
+
+    elif nxpt == 2:
+        q1 = q_odata[0] / rr[ixrb[0] + 1] ** project
+        q2 = q_idata[1] / rr[ixlb[1] + 1] ** project
+        q3 = q_odata[1] / rr[ixrb[1]] ** project
+        q4 = q_idata[0] / rr[ixlb[0]] ** project
+        if xaxis == "r":
+            r1 = r_idata[0]
+            r2 = r_odata[1]
+            r3 = r_idata[1]
+            r4 = r_odata[0]
+        elif "psi" in xaxis:
+            r1 = psin[ixrb[0] + 1, :, 0]
+            r2 = psin[ixlb[1] + 1, :, 0]
+            r3 = psin[ixrb[1], :, 0]
+            r4 = psin[ixrb[0], :, 0]
         return [q1, q2, q3, q4], [r1, r2, r3, r4]
 
 
-def get_Q_target_proportions():
-    """Get the proportions of heat flux delivered to each strike point
+def get_Q_plates(
+    c: uetools.Case | None = None, include_radiation: bool = True, verbose: bool = True
+):
+    """Get the total heat flux delivered to each strike point
 
     :return: P1, P2, P3, P4
     """
-    bbb.plateflux()
-    q_odata = (bbb.sdrrb + bbb.sdtrb).T
-    q_idata = (bbb.sdrlb + bbb.sdtlb).T
-    q1 = q_odata[0]
-    q2 = q_idata[1]
-    q3 = q_odata[1]
-    q4 = q_idata[0]
-    r1 = com.yyrb.T[0]
-    r2 = com.yylb.T[1]
-    r3 = com.yyrb.T[1]
-    r4 = com.yylb.T[0]
-    dr1 = get_dr_plate(r1)
-    dr2 = get_dr_plate(r2)
-    dr3 = get_dr_plate(r3)
-    dr4 = get_dr_plate(r4)
 
-    P1 = np.sum(q1[1:-1] * dr1[1:-1])
-    P2 = np.sum(q2[1:-1] * dr2[1:-1])
-    P3 = np.sum(q3[1:-1] * dr3[1:-1])
-    P4 = np.sum(q4[1:-1] * dr4[1:-1])
+    q, _ = get_q_plates(
+        c=c, xaxis="r", include_radiation=include_radiation, project=False
+    )
+    if c is None:
+        sxnp = com.sxnp
+        ixlb = com.ixlb
+        ixrb = com.ixrb
+        nxpt = com.nxpt
+    else:
+        sxnp = c.get("sxnp")
+        ixlb = c.get("ixlb")
+        ixrb = c.get("ixrb")
+        nxpt = c.get("nxpt")
 
-    return P1, P2, P3, P4
+    if nxpt == 1:
+        P1 = np.sum(q[0] * sxnp[ixrb[0]])
+        P2 = np.sum(q[1] * sxnp[ixlb[0]])
+        if verbose:
+            print("Power delivered to each target plate: ")
+            Ptot = P1 + P2
+            print(
+                "SP1: {:.1f}".format(100 * P1 / Ptot)
+                + "%, "
+                + "SP2: {:.1f}".format(100 * P2 / Ptot)
+                + "%, "
+            )
+        return P1, P2
+    elif nxpt == 2:
+        P1 = np.sum(q[0] * sxnp[ixrb[0]])
+        P2 = np.sum(q[1] * sxnp[ixlb[1]])
+        P3 = np.sum(q[2] * sxnp[ixrb[1] + 1])
+        P4 = np.sum(q[3] * sxnp[ixrb[0] + 1])
+        if verbose:
+            print("Power delivered to each target plate: ")
+            Ptot = P1 + P2 + P3 + P4
+            print(
+                "SP1: {:.1f}".format(100 * P1 / Ptot)
+                + "%, "
+                + "SP2: {:.1f}".format(100 * P2 / Ptot)
+                + "%, "
+                + "SP3: {:.1f}".format(100 * P3 / Ptot)
+                + "%, "
+                + "SP4: {:.1f}".format(100 * P4 / Ptot)
+                + "%, "
+            )
+
+        return P1, P2, P3, P4
+
+    # if include_radiation:
+    #     q_odata = (bbb.sdrrb + bbb.sdtrb).T
+    #     q_idata = (bbb.sdrlb + bbb.sdtlb).T
+    # else:
+    #     q_odata = bbb.sdtrb.T
+    #     q_idata = bbb.sdtlb.T
+    # q1 = q_odata[0]
+    # q2 = q_idata[1]
+    # q3 = q_odata[1]
+    # q4 = q_idata[0]
+    # r1 = com.yyrb.T[0]
+    # r2 = com.yylb.T[1]
+    # r3 = com.yyrb.T[1]
+    # r4 = com.yylb.T[0]
+    # dr1 = get_dr_plate(r1)
+    # dr2 = get_dr_plate(r2)
+    # dr3 = get_dr_plate(r3)
+    # dr4 = get_dr_plate(r4)
+
+    # P1 = np.sum(q1[1:-1] * dr1[1:-1])
+    # P2 = np.sum(q2[1:-1] * dr2[1:-1])
+    # P3 = np.sum(q3[1:-1] * dr3[1:-1])
+    # P4 = np.sum(q4[1:-1] * dr4[1:-1])
+
+    # return P1, P2, P3, P4
 
 
 def get_q_drifts():

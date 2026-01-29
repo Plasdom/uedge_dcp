@@ -123,13 +123,22 @@ class UESave:
         self.varlist = ["te", "ti", "phi", "ni", "ng", "up", "tg"]
 
         ds = netCDF4.Dataset(filename)
-        self.rm = ds["com"]["rm"][:]
-        self.zm = ds["com"]["zm"][:]
-        self.nx = ds["com"]["nx"][:]
-        self.ny = ds["com"]["ny"][:]
-        self.vars = {}
-        for v in self.varlist:
-            self.vars[v] = ds["bbb"][v][:]
+        try:
+            self.rm = ds["com"]["rm"][:]
+            self.zm = ds["com"]["zm"][:]
+            self.nx = ds["com"]["nx"][:]
+            self.ny = ds["com"]["ny"][:]
+            self.vars = {}
+            for v in self.varlist:
+                self.vars[v] = ds["bbb"][v][:]
+        except IndexError: 
+            self.rm = ds["grid"]["com"]["rm"][:]
+            self.zm = ds["grid"]["com"]["zm"][:]
+            self.nx = ds["grid"]["com"]["nx"][:]
+            self.ny = ds["grid"]["com"]["ny"][:]
+            self.vars = {}
+            for v in self.varlist:
+                self.vars[v] = ds["restore"]["bbb"][v+"s"][:]
 
         ds.close()
 
@@ -400,16 +409,16 @@ def interpolate_var_overlaps(
 
 def interpolate_save(
     old_grid: str,
-    new_grid: str,
     old_save: str,
+    new_grid: str | None = None,
     geometry: str = "dnbot",
     method: str = "overlaps",
 ) -> None:
     """Update the initial variable values for a current UEDGE session by interpolating from an old grid+save to the new grid
 
     :param old_grid: Filepath to old grid
-    :param new_grid: Filepath to new grid
     :param old_save: Filepath to old HDF5 save
+    :param new_grid: Filepath to new grid
     :param geometry: Grid geometry, defaults to "dnbot"
     :param method: Inteprolation method ["KDE", "overlaps"], defaults to "overlaps"
     """
@@ -417,10 +426,22 @@ def interpolate_save(
         geometry,
         old_grid,
     )
-    g2 = Grid(
-        geometry,
-        new_grid,
-    )
+    if new_grid is not None:
+        g2 = Grid(
+            geometry,
+            new_grid,
+        )
+    else:
+        g2 = Grid(
+            geometry,
+            old_grid,
+        )
+        g2.nx = com.nx
+        g2.ny = com.ny
+        g2.r_c = com.rm[:, :, 0]
+        g2.z_c = com.zm[:, :, 0]
+        g2.r = com.rm[:, :]
+        g2.z = com.zm[:, :]
 
     # Check the dimensions of the new grid matches the current loaded UEDGE grid
     if (com.nx != g2.nx) or (com.ny != g2.ny):

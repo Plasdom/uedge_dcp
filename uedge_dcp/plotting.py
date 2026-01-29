@@ -2,6 +2,7 @@ from xml.etree.ElementInclude import include
 import matplotlib.colors
 from uedge import *
 import matplotlib.pyplot as plt
+import uetools
 import uedge_dcp.post_processing as pp
 from uedge_dcp.gridue_manip import Grid, UESave
 from numpy import zeros, sum, transpose, mgrid, nan, array, cross, nan_to_num
@@ -15,10 +16,69 @@ import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 
-def plot_IRVB_comparison(case: str, timestamp_ms: float, uefile: str = None):
+def plottprof(var, use_psin=False):
+    """Plot target profiles of a given variable
 
-    rlim = [com.rm.min(), com.rm.max()]
-    zlim = [com.zm.min(), com.zm.max()]
+    :param var: UEDGE variable
+    """
+
+    if com.nxpt == 2:
+
+        if use_psin:
+            if com.sibdry != 0 and com.simagx != 0:
+                psin = (com.psi - com.simagx) / (com.sibdry - com.simagx)
+                xlabel = r"$\psi_n$"
+            else:
+                psin = com.psi[:, :, 0]
+                xlabel = r"$\psi$"
+            r1 = psin[:, com.ixrb[0] + 1]
+            r2 = psin[:, com.ixlb[1]]
+            r3 = psin[:, com.ixrb[1] + 1]
+            r4 = psin[:, com.ixlb[0]]
+        else:
+            r1 = com.yyrb.T[0]
+            r2 = com.yylb.T[1]
+            r3 = com.yyrb.T[1]
+            r4 = com.yylb.T[0]
+            xlabel = "Distance along target plate [m]"
+
+        v1 = var[com.ixrb[0]]
+        v2 = var[com.ixlb[1] + 1]
+        v3 = var[com.ixrb[1]]
+        v4 = var[com.ixlb[0] + 1]
+
+        fig, ax = plt.subplots(4)
+        ax[0].plot(r1, v1)
+        ax[1].plot(r2, v2)
+        ax[2].plot(r3, v3)
+        ax[3].plot(r4, v4)
+        [a.grid() for a in ax]
+        ax[-1].set_xlabel(xlabel)
+
+    fig.tight_layout()
+
+
+def plot_IRVB_comparison(
+    case: int,
+    timestamp_ms: float,
+    uefile: str = None,
+    savepath: str | None = None,
+    xlim: list | None = None,
+    ylim: list | None = None,
+    vmax=None,
+    vmin=10**4.5,
+    c: uetools.Case | None = None,
+):
+    if c is None:
+        if xlim is None:
+            xlim = [com.rm.min(), com.rm.max()]
+        if ylim is None:
+            ylim = [com.zm.min(), com.zm.max()]
+    else:
+        if xlim is None:
+            xlim = [c.get("rm").min(), c.get("rm").max()]
+        if ylim is None:
+            ylim = [c.get("zm").min(), c.get("zm").max()]
 
     # Read in IRVB data
     fn = (
@@ -42,63 +102,83 @@ def plot_IRVB_comparison(case: str, timestamp_ms: float, uefile: str = None):
     irvb = np.transpose(d[troi, :, :])
 
     # Set colorscale limits
-    vmin = 10**4.5
-    vmax = max(bbb.prad.max(), irvb[np.where(~np.isnan(irvb))].max())
+    if vmax is None:
+        vmax = max(bbb.prad.max(), irvb[np.where(~np.isnan(irvb))].max())
 
     # Plot the UEDGE data
     fig, ax = plt.subplots(ncols=2, sharex=True, sharey=True)
-    plotvar(
-        bbb.prad,
-        ax=ax[0],
-        logscale=True,
-        vmin=vmin,
-        vmax=vmax,
-        subtitle="UEDGE",
-        xlim=rlim,
-        ylim=zlim,
-    )
-
-    # Add the UEDGE mesh to the IRVB plot
-    if uefile is None:
-        rm = com.rm
-        zm = com.zm
-        nx = com.nx
-        ny = com.ny
+    if c is None:
+        plotvar(
+            bbb.prad,
+            ax=ax[0],
+            logscale=True,
+            vmin=vmin,
+            vmax=vmax,
+            subtitle="UEDGE",
+            xlim=xlim,
+            ylim=ylim,
+        )
     else:
-        try:
-            grid = Grid(geometry="NA", filename=uefile)
-            rm = grid.r
-            zm = grid.z
-            nx = grid.nx
-            ny = grid.ny
-        except:
-            save = UESave("uefile")
-            rm = save.rm
-            zm = save.zm
-            nx = rm.shape[0]
-            ny = rm.shape[1]
-    for iy in np.arange(0, ny + 2):
-        for ix in np.arange(0, nx + 2):
-            ax[1].plot(
-                rm[ix, iy, [1, 2, 4, 3, 1]],
-                zm[ix, iy, [1, 2, 4, 3, 1]],
-                color="gray",
-                linewidth=0.1,
-                # alpha=0.5,
-            )
+        c.plot.mesh(
+            c.get("prad") + c.get("pradhyd"),
+            ax=ax[0],
+            log=True,
+            zrange=(vmin, vmax),
+            cmap="inferno",
+            title="UEDGE",
+            # colorbar=False,
+        )
 
     # Plot the IRVB data
     norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
-    c = ax[1].pcolormesh(r, z, irvb, cmap="inferno", norm=norm)
-    cax = fig.add_axes([0.91, 0.1, 0.03, 0.8])
-    cb = fig.colorbar(c, cax=cax)
+    pcm = ax[1].pcolormesh(r, z, irvb, cmap="inferno", norm=norm)
+    # cax = fig.add_axes([0.91, 0.1, 0.03, 0.8])
+    # cb = fig.colorbar(pcm, cax=cax)
+    cb = fig.colorbar(pcm, ax=ax[1])
     cb.set_label("Wm$^{-3}$", labelpad=-10)
     ax[1].set_xlabel("R [m]")
     ax[1].set_ylabel("Z [m]")
-    ax[1].set_title("IRVB (UEDGE mesh overlaid)", fontsize=10, loc="left")
+    ax[1].set_title("IRVB", fontsize=10, loc="left")
     ax[1].set_aspect("equal")
-    ax[1].set_xlim(rlim)
-    ax[1].set_ylim(zlim)
+    ax[1].set_xlim(xlim)
+    ax[1].set_ylim(ylim)
+
+    # Add the UEDGE mesh to the IRVB plot
+    if c is None:
+        if uefile is None:
+            rm = com.rm
+            zm = com.zm
+            nx = com.nx
+            ny = com.ny
+        else:
+            try:
+                grid = Grid(geometry="NA", filename=uefile)
+                rm = grid.r
+                zm = grid.z
+                nx = grid.nx
+                ny = grid.ny
+            except:
+                save = UESave("uefile")
+                rm = save.rm
+                zm = save.zm
+                nx = rm.shape[0]
+                ny = rm.shape[1]
+        for iy in np.arange(0, ny + 2):
+            for ix in np.arange(0, nx + 2):
+                ax[1].plot(
+                    rm[ix, iy, [1, 2, 4, 3, 1]],
+                    zm[ix, iy, [1, 2, 4, 3, 1]],
+                    color="gray",
+                    linewidth=0.1,
+                    # alpha=0.5,
+                )
+    else:
+        c.plot.lcfs(ax=ax[1])
+
+    fig.tight_layout()
+
+    if savepath is not None:
+        fig.savefig(savepath)
 
 
 def plot_force_balance(iy=com.iysptrx1[0] + 1, ifl=2):
@@ -121,7 +201,7 @@ def plot_force_balance(iy=com.iysptrx1[0] + 1, ifl=2):
 
 
 def plot_midplane_profiles(
-    case: str = "49464",
+    case: int = 49464,
     timestamp_ms: float = 840,
     savepath: str = None,
     ixmp: int = None,
@@ -132,6 +212,7 @@ def plot_midplane_profiles(
     label: str = None,
     num_timestamps: int = 3,
     ts_data_filepath: str | None = None,
+    color=None
 ):
     """Plot midplane profiles and compaare with experimental data from Thomspon scattering diagnostic
 
@@ -150,7 +231,7 @@ def plot_midplane_profiles(
     if ts_data_filepath is None:
         ts = np.load(
             "/Users/power8/Documents/04_mastu_modelling/experimental_profiles/Thompson scattering/ts_"
-            + case
+            + str(case)
             + ".npz"
         )
     else:
@@ -202,7 +283,8 @@ def plot_midplane_profiles(
     if ax is None:
         _, ax = plt.subplots(2, 1, sharex=True)
         axes_provided = False
-        c = "black"
+        if color is None:
+            color = "black"
         if label is None:
             l = "UEDGE"
         else:
@@ -210,7 +292,8 @@ def plot_midplane_profiles(
         el = "Experiment"
     else:
         axes_provided = True
-        c = "gray"
+        if color is None:
+            color = "gray"
         if label is None:
             l = "UEDGE 2"
         else:
@@ -237,7 +320,7 @@ def plot_midplane_profiles(
             )
         ax[0].plot([], [], "--", color="red", label=el)
         ax[0].grid()
-    ax[0].plot(r_mp, ne_mp, marker="x", linestyle="-", color=c, label=l, zorder=999)
+    ax[0].plot(r_mp, ne_mp, marker="x", linestyle="-", color=color, label=l, zorder=999)
     ax[0].set_ylabel("$n_e$ [m$^{-3}$]")
     ax[0].legend()
 
@@ -257,7 +340,7 @@ def plot_midplane_profiles(
         ax[1].set_xlabel("R [m]")
         ax[1].set_ylabel("$T_e$ [eV]")
         ax[1].grid()
-    ax[1].plot(r_mp, Te_mp, marker="x", linestyle="-", color=c, label=l, zorder=999)
+    ax[1].plot(r_mp, Te_mp, marker="x", linestyle="-", color=color, label=l, zorder=999)
 
     plt.subplots_adjust(hspace=0.1)
 
@@ -267,7 +350,7 @@ def plot_midplane_profiles(
 def plotrad(**plotvar_kwargs):
     """Plot impurity radiation"""
     plotvar(
-        bbb.prad,
+        bbb.prad + bbb.pradhyd,
         logscale=True,
         vmin=10**4.5,
         label="$P_{rad}$ [Wm$^{-3}$]",
@@ -599,9 +682,10 @@ def plot_diff_coeffs():
     fig.tight_layout()
 
 
-def plot_q_plates(include_radiation=True, project=True):
+def plot_q_plates(include_radiation=True, project=False):
     """Plot the total heat flux delivered to each target plate (snowflake geometry is assumed)"""
     bbb.plateflux()
+    bbb.pradpltwl()
     if include_radiation:
         q_odata = (bbb.sdrrb + bbb.sdtrb).T
         q_idata = (bbb.sdrlb + bbb.sdtlb).T
@@ -647,7 +731,9 @@ def plot_q_plates(include_radiation=True, project=True):
         r3 = com.yyrb.T[1]
         r4 = com.yylb.T[0]
 
-        P1, P2, P3, P4 = pp.get_Q_target_proportions()
+        P1, P2, P3, P4 = pp.get_Q_plates(
+            include_radiation=include_radiation
+        )
         Ptot = P1 + P2 + P3 + P4
 
         print("Power delivered to each target plate: ")
@@ -733,8 +819,8 @@ def plotmesh(
     ylim=None,
     yinv=False,
     title="UEDGE grid",
-    subtitle=None,
     show=True,
+    ax=None,
 ):
 
     if gridue_file is None:
@@ -748,8 +834,14 @@ def plotmesh(
         zm = grid.z
         nx = grid.nx
         ny = grid.ny
+    if ax is None:
+        axes_provided = False
+    else:
+        axes_provided = True
 
-    fig, ax = plt.subplots(1)
+    if not axes_provided:
+        # fig, ax = plt.subplots(1, figsize=(2.5, 3.75))
+        fig, ax = plt.subplots(1)
 
     if iso:
         ax.set_aspect("equal", "datalim")
@@ -783,6 +875,9 @@ def plotmesh(
     if yinv:
         ax.invert_yaxis()
 
+    if not axes_provided:
+        fig.tight_layout()
+
     if show:
         plt.show()
 
@@ -810,6 +905,8 @@ def plotvar(
     cmap: str = "inferno",
     savepath: str = None,
     ax=None,
+    show=True,
+    c: uetools.Case | None = None,
 ):
     """Plot a variable on the UEDGE mesh. Variable must have same dimensions as grid.
 
@@ -832,14 +929,20 @@ def plotvar(
 
     patches = []
 
-    if rm is None:
-        rm = com.rm
-        zm = com.zm
-        nx = com.nx
-        ny = com.ny
+    if c is None:
+        if rm is None:
+            rm = com.rm
+            zm = com.zm
+            nx = com.nx
+            ny = com.ny
+        else:
+            nx = rm.shape[0] - 2
+            ny = rm.shape[1] - 2
     else:
-        nx = rm.shape[0] - 2
-        ny = rm.shape[1] - 2
+        rm = c.get("rm")
+        zm = c.get("zm")
+        nx = c.get("nx")
+        ny = c.get("ny")
 
     if geometry:
         for iy in np.arange(0, ny + 2):
@@ -888,9 +991,7 @@ def plotvar(
         lw = 0.05
     else:
         lw = 1e-6
-    p = PatchCollection(
-        patches, norm=norm, cmap=cmap, edgecolors="black", linewidths=lw
-    )
+    p = PatchCollection(patches, norm=norm, cmap=cmap, edgecolor="black", linewidth=lw)
 
     p.set_array(np.array(vals))
 
@@ -943,94 +1044,107 @@ def plotvar(
     if savepath is not None:
         fig.savefig(savepath)
 
-    plt.show()
+    if show:
+        plt.show()
 
-    return ax
+    return ax, p
 
 
 def animatevar(
     var: np.ndarray,
-    iso: bool = True,
-    grid: bool = False,
-    label: str = None,
-    vmin: float = None,
-    vmax: float = None,
-    yinv: bool = False,
-    title: str = "UEDGE data",
-    subtitle: str = None,
-    show: bool = True,
-    logscale: bool = False,
-    xlim: tuple = (None, None),
-    ylim: tuple = (None, None),
+    # iso: bool = True,
+    # grid: bool = False,
+    # label: str = None,
+    # vmin: float = None,
+    # vmax: float = None,
+    # yinv: bool = False,
+    # title: str = "UEDGE data",
+    # subtitle: str = None,
+    # show: bool = True,
+    # logscale: bool = False,
+    # xlim: tuple = (None, None),
+    # ylim: tuple = (None, None),
+    **kwargs
 ):
     """Animate a variable on the UEDGE mesh. Variable must have same dimensions as grid, plus a timestep dimension (assumed to be the last dimension in the array).
 
     :param var: A numpy array to plot
-    :param iso: Plot on axes with equal aspect ratio, defaults to True
-    :param grid: Show the grid cells, defaults to False
-    :param label: Colour bar label, defaults to None
-    :param vmin: vmin for colour bar, defaults to None
-    :param vmax: vmax for colour bar, defaults to None
-    :param yinv: Invert y axis, defaults to False
-    :param title: Plot title, defaults to "UEDGE data"
-    :param subtitle: Plot subtitle, defaults to None
-    :param show: Call plt.show(), defaults to True
+    # :param iso: Plot on axes with equal aspect ratio, defaults to True
+    # :param grid: Show the grid cells, defaults to False
+    # :param label: Colour bar label, defaults to None
+    # :param vmin: vmin for colour bar, defaults to None
+    # :param vmax: vmax for colour bar, defaults to None
+    # :param yinv: Invert y axis, defaults to False
+    # :param title: Plot title, defaults to "UEDGE data"
+    # :param subtitle: Plot subtitle, defaults to None
+    # :param show: Call plt.show(), defaults to True
     """
 
-    patches = []
+    # patches = []
 
-    for iy in np.arange(0, com.ny + 2):
-        for ix in np.arange(0, com.nx + 2):
-            rcol = com.rm[ix, iy, [1, 2, 4, 3]]
-            zcol = com.zm[ix, iy, [1, 2, 4, 3]]
-            rcol.shape = (4, 1)
-            zcol.shape = (4, 1)
-            polygon = Polygon(np.column_stack((rcol, zcol)))
-            patches.append(polygon)
+    # for iy in np.arange(0, com.ny + 2):
+    #     for ix in np.arange(0, com.nx + 2):
+    #         rcol = com.rm[ix, iy, [1, 2, 4, 3]]
+    #         zcol = com.zm[ix, iy, [1, 2, 4, 3]]
+    #         rcol.shape = (4, 1)
+    #         zcol.shape = (4, 1)
+    #         polygon = Polygon(np.column_stack((rcol, zcol)))
+    #         patches.append(polygon)
 
-    # -is there a better way to cast input data into 2D array?
-    vals = np.zeros((com.nx + 2) * (com.ny + 2))
+    # # -is there a better way to cast input data into 2D array?
+    # vals = np.zeros((com.nx + 2) * (com.ny + 2))
 
-    for iy in np.arange(0, com.ny + 2):
-        for ix in np.arange(0, com.nx + 2):
-            k = ix + (com.nx + 2) * iy
-            vals[k] = var[ix, iy, 0]
+    # for iy in np.arange(0, com.ny + 2):
+    #     for ix in np.arange(0, com.nx + 2):
+    #         k = ix + (com.nx + 2) * iy
+    #         vals[k] = var[ix, iy, 0]
 
-    # Set vmin and vmax disregarding guard cells
-    if not vmax:
-        vmax = np.max(var)
-    if not vmin:
-        vmin = np.min(var)
+    # # Set vmin and vmax disregarding guard cells
+    # if not vmax:
+    #     vmax = np.max(var)
+    # if not vmin:
+    #     vmin = np.min(var)
 
-    if logscale:
-        norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
-    else:
-        norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
-    ###p = PatchCollection(patches, cmap=cmap, norm=norm)
-    p = [PatchCollection(patches, norm=norm, cmap="inferno")]
-    p[0].set_array(np.array(vals))
+    # if logscale:
+    #     norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
+    # else:
+    #     norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+    # ###p = PatchCollection(patches, cmap=cmap, norm=norm)
+    # p = [PatchCollection(patches, norm=norm, cmap="inferno")]
+    # p[0].set_array(np.array(vals))
 
+    # fig, ax = plt.subplots(1)
+    # fig.subplots_adjust(left=0.15, bottom=0.2, right=0.85, top=0.92)
+    # ax.add_collection(p[0])
+    # ax.autoscale_view()
+    # plt.colorbar(p[0], label=label)
+
+    # if iso:
+    #     plt.axis("equal")  # regular aspect-ratio
+
+    # fig.suptitle(title)
+    # ax.set_title(subtitle, loc="left", fontsize=10)
+    # ax.set_xlabel("R [m]")
+    # ax.set_ylabel("Z [m]")
+    # ax.set_xlim(xlim)
+    # ax.set_ylim(ylim)
+
+    # if grid:
+    #     ax.grid()
+
+    # if yinv:
+    #     ax.invert_yaxis()
+    
     fig, ax = plt.subplots(1)
     fig.subplots_adjust(left=0.15, bottom=0.2, right=0.85, top=0.92)
-    ax.add_collection(p[0])
-    ax.autoscale_view()
-    plt.colorbar(p[0], label=label)
+    if "vmin" not in kwargs.keys():
+        kwargs["vmin"] = var.min()
+    if "vmax" not in kwargs.keys():
+        kwargs["vmax"] = var.max()
+    ax, p = plotvar(var[...,0], **kwargs, ax=ax)
+    p = [p]
 
-    if iso:
-        plt.axis("equal")  # regular aspect-ratio
-
-    fig.suptitle(title)
-    ax.set_title(subtitle, loc="left", fontsize=10)
-    ax.set_xlabel("R [m]")
-    ax.set_ylabel("Z [m]")
-    ax.set_xlim(xlim)
-    ax.set_ylim(ylim)
-
-    if grid:
-        ax.grid()
-
-    if yinv:
-        ax.invert_yaxis()
+    plt.colorbar(p[0])
 
     axsurf1 = fig.add_axes([0.15, 0.05, 0.6, 0.03])
     surf1_slider = Slider(
@@ -1042,6 +1156,7 @@ def animatevar(
         valstep=1,
     )
 
+    vals = np.zeros((com.nx+2)*(com.ny+2))
     def update_surf1(val):
         p[0].remove()
         for iy in np.arange(0, com.ny + 2):
@@ -1655,7 +1770,7 @@ def plotrprof(
     :param show: _description_, defaults to True
     """
 
-    fig, ax = plt.subplots(1)
+    fig, ax = plt.subplots(ncols=2, width_ratios=[1, 2])
 
     if ix < 0:
         ix0 = bbb.ixmp
@@ -1665,6 +1780,10 @@ def plotrprof(
         ix0 = ix
         xcoord = com.rm[ix0, :, 0] - com.rm[ix0, com.iysptrx1[0], 0]
         xlabel = r"$R-R_{sep}$"
+
+    v = np.zeros((com.nx + 2, com.ny + 2))
+    v[ix0, :] = 1
+    plotvar(v, cmap="gray_r", mesh=True, ax=ax[0])
 
     if use_psin:
         if com.sibdry != 0 and com.simagx != 0:
@@ -1679,25 +1798,84 @@ def plotrprof(
     #     # xcoord = com.rm[bbb.ixmp, :, 0] - com.rm[bbb.ixmp, com.iysptrx, 0]
     #     xlabel = "rho=R-Rsep [m]"
 
-    ax.plot(xcoord, var[ix0, :], marker="x")
+    ax[1].plot(xcoord, var[ix0, :], marker="x")
 
     if xlim:
-        ax.set_xlim(xlim)
+        ax[1].set_xlim(xlim)
 
     if ylim:
-        ax.set_ylim(ylim)
+        ax[1].set_ylim(ylim)
 
     if ylog:
-        ax.set_yscale("log")
+        ax[1].set_yscale("log")
 
     if xlog:
-        ax.set_xscale("log")
+        ax[1].set_xscale("log")
 
-    ax.set_xlabel(xlabel)
-    ax.grid(True)
+    ax[1].set_xlabel(xlabel)
+    ax[1].grid(True)
 
     if show:
         plt.show()
+
+
+def plotpprof(
+    var,
+    iy=-1,
+    xaxis="pol",
+    title="UEDGE data",
+    logx=False,
+    logy=False,
+    subtitle=None,
+    remove_ghosts=True,
+    c: uetools.Case | None = None,
+    ix_seed: int = 0
+):
+    """_summary_
+
+    :param var: _description_
+    :param iy: _description_, defaults to -1
+    :param xaxis: _description_, defaults to "pol"
+    :param title: _description_, defaults to "UEDGE data"
+    :param logx: _description_, defaults to False
+    :param logy: _description_, defaults to False
+    :param subtitle: _description_, defaults to None
+    """
+    posx, x, fv = pp.get_flux_tube(var, iy, ix_seed=ix_seed, xaxis=xaxis, c=c)
+
+    # Retrieve grid variables
+    if c is None:
+        nx = com.nx
+        ny = com.ny
+    else:
+        nx = c.get("nx")
+        ny = c.get("ny")
+
+    v = np.zeros([nx + 2, ny + 2])
+    for ix in range(len(posx)):
+        v[posx[ix], iy] = 1 + ix / len(posx)
+
+    if xaxis == "par":
+        xlabel = r"$s_{\parallel}$ [m]"
+    elif xaxis == "pol":
+        xlabel = r"$s_{\theta}$ [m]"
+    elif xaxis == "index":
+        xlabel = "poloidal index"
+    fig, ax = plt.subplots(ncols=2, width_ratios=[1, 2])
+    plotvar(v, cmap="gray_r", mesh=True, ax=ax[0], c=c)
+    if remove_ghosts:
+        ax[1].plot(x[1:-1], fv[1:-1])
+    else:
+        ax[1].plot(x, fv)
+    ax[1].grid()
+    ax[1].set_xlabel(xlabel)
+    if logy:
+        ax[1].set_yscale("log")
+
+    if logx:
+        ax[1].set_xscale("log")
+    ax[1].set_title(subtitle, loc="right")
+    fig.tight_layout()
 
 
 def plot_q_exp_fit(
@@ -1706,6 +1884,7 @@ def plot_q_exp_fit(
     ixmp: int = None,
     savepath=None,
     SP: int = 1,
+    include_radiation: bool = True,
 ) -> None:
     """Plot an exponential fit of the parallel heat flux decay length projected to the outer midplane
 
@@ -1727,7 +1906,9 @@ def plot_q_exp_fit(
         q_fit_full,
         s_fit,
         eich_lqo,
-    ) = pp.eich_exp_shahinul_odiv_final(omp, ixmp, SP=SP)
+    ) = pp.eich_exp_shahinul_odiv_final(
+        omp, ixmp, SP=SP, include_radiation=include_radiation
+    )
 
     fig, ax = plt.subplots(1, figsize=(4.5, 2.75))
     # c0, c1 = "blue", "green"

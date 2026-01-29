@@ -439,7 +439,7 @@ def set_transport_coeffs_DM(
     :return: If inplace=True, return nothing. If inplace=False, return ky, dn arrays
     """
     runid = 1
-    grd.readgrid("gridue", runid)
+    grd.readgrid(bbb.GridFileName, runid)
     geometry = str(com.geometry[0])
 
     # Set/reset other transport coeffs before calculating D_y and K_y
@@ -576,7 +576,7 @@ def set_transport_coeffs_DM_BO(
     :return: If inplace=True, return nothing. If inplace=False, return ky, dn arrays
     """
     runid = 1
-    grd.readgrid("gridue", runid)
+    grd.readgrid(bbb.GridFileName, runid)
     geometry = str(com.geometry[0])
 
     # Set/reset other transport coeffs before calculating D_y and K_y
@@ -690,7 +690,7 @@ def set_transport_coeffs_DM_BO(
 def set_perp_transport_coeffs_DM_old(ky_div: float = 1.0, dif_div: float = 1.0):
     """Set the perpendicular transport coefficients according to the value shared by David Moulton for MAST-U"""
     runid = 1
-    grd.readgrid("gridue", runid)
+    grd.readgrid(bbb.GridFileName, runid)
 
     # Set/reset other transport coeffs before calculating D_y and K_y
     bbb.kye = 0  # 0.5		#chi_e for radial elec energy diffusion
@@ -828,7 +828,7 @@ def set_perp_transport_coeffs(
         # Calculating transport coefficients
 
         runid = 1
-        grd.readgrid("gridue", runid)
+        grd.readgrid(bbb.GridFileName, runid)
 
         if dif_div is None:
             for isp in range(bbb.dif_use.shape[-1]):
@@ -1102,7 +1102,7 @@ def set_drifts(b0_scale: float = 65.0, diamagnetic_coeff: float = 0.0):
 def set_drifts_maxim(b0_scale: float = 10):
     """Turn on drifts (template taken from https://github.com/LLNL/UEDGE/blob/master/wikidocs/turn_on_drifts.html)
 
-    :param b0_scale: Scale factor on b0: higher values suppresses drifts. This parameter can steadily reduced to 1 to assist with convergence.
+    :param b0_scale: Scale factor on b0: higher values suppresses drifts. This parameter can steadily be reduced to 1 to assist with convergence.
     """
     bbb.isphion = 1
     bbb.b0 = b0_scale  # =1 for normal direction B field
