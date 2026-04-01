@@ -65,6 +65,7 @@ class Grid:
                 body_start = i + 1
                 break
         header_lines = lines[: body_start - 1]
+        self.header_lines = header_lines
 
         # Parse the header
         self.parse_header(header_lines)
@@ -72,12 +73,12 @@ class Grid:
         # Locate each block of data
         breaks = [body_start]
         for i in range(body_start, nlines):
-            if lines[i] == "\n" or "iogridue" in lines[i]:
+            if (lines[i] == "\n") or ("iogridue" in lines[i]) or (i == len(lines)-1):
                 breaks.append(i)
 
         # Read each block of data
         grid_vars = []
-        for i in range(8):
+        for i in range(len(breaks)-1):
             var_lines = lines[breaks[i] : breaks[i + 1]]
             var_data = np.array(
                 [
@@ -115,7 +116,49 @@ class Grid:
         self.bpol_c = self.bpol[:, :, 0]
         self.btor_c = self.btor[:, :, 0]
         self.b_c = self.b[:, :, 0]
+        
+    def format_var_for_writing(self,var):
+        """Format a grid variable for writing to a gridue file
 
+        :param var: Grid variable with dims (nx+2, ny+2, nlocs)
+        """
+        # Put all values into a 1D array
+        write_var_data = np.zeros(len(self.locs) * (self.nx+2) * (self.ny+2))
+        i_count = 0
+        for iloc in range(len(self.locs)):
+            for iy in range(self.ny + 2):
+                for ix in range(self.nx + 2):
+                    write_var_data[i_count] = var[ix, iy, iloc]
+                    i_count += 1
+
+        # Reshape into 3 values per line, with values written in fortran format
+        write_var_data=write_var_data.reshape(-1,3)
+        write_var_data = ["  ".join(["{:.15e}".format(write_var_data[i][j]) for j in range(3)]) for i in range(write_var_data.shape[0])]
+        write_var_data = ["  " + write_var_data[i].replace("e","D") + "\n" for i in range(len(write_var_data))]
+
+        # Ensure consistent spacing between values
+        write_var_data = [write_var_data[i].replace("  -"," -") for i in range(len(write_var_data))]
+
+        return write_var_data
+        
+
+    def write(self, filepath):
+        """Write the grid to a gridue file
+
+        :param filepath: _description_
+        """
+        outlines = []
+        outlines += self.header_lines
+        outlines += ["\n"]
+
+        for v in [self.r, self.z, self.psi, self.br, self.bz, self.bpol, self.btor, self.b]:
+            outlines += self.format_var_for_writing(v)
+            outlines += ["\n"]
+        
+        with open(filepath, "w") as f:
+            f.writelines(outlines)
+
+        
 
 class UESave:
     def __init__(self, filename: str):

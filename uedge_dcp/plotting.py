@@ -68,6 +68,7 @@ def plot_IRVB_comparison(
     vmax=None,
     vmin=10**4.5,
     c: uetools.Case | None = None,
+    pass_num = "first_pass"
 ):
     if c is None:
         if xlim is None:
@@ -89,27 +90,32 @@ def plot_IRVB_comparison(
     a = np.load(fn)
     a.allow_pickle = True
     b = dict(a)
-    y = b["first_pass"].all()
-    z = b["first_pass"][()]["inverted_dict"]
+    y = b[pass_num].all()
+    z = b[pass_num][()]["inverted_dict"]
     grid_resolution = 2
     t = z[str(grid_resolution)]["time_full_binned_crop"]
     tidx = np.where(t >= timestamp_ms / 1000)
     troi = tidx[0][0]
+    
     d = z[str(grid_resolution)]["inverted_data"]
     r = z[str(grid_resolution)]["geometry"]["R"]
     z = z[str(grid_resolution)]["geometry"]["Z"]
+    print(d.shape)
 
     irvb = np.transpose(d[troi, :, :])
 
     # Set colorscale limits
     if vmax is None:
-        vmax = max(bbb.prad.max(), irvb[np.where(~np.isnan(irvb))].max())
+        if c is None:
+            vmax = max((bbb.prad+bbb.pradhyd).max(), irvb[np.where(~np.isnan(irvb))].max())
+        else:
+            vmax = max((c.get("prad")+c.get("pradhyd")).max(), irvb[np.where(~np.isnan(irvb))].max())
 
     # Plot the UEDGE data
     fig, ax = plt.subplots(ncols=2, sharex=True, sharey=True)
     if c is None:
         plotvar(
-            bbb.prad,
+            (bbb.prad+bbb.pradhyd),
             ax=ax[0],
             logscale=True,
             vmin=vmin,
@@ -126,7 +132,7 @@ def plot_IRVB_comparison(
             zrange=(vmin, vmax),
             cmap="inferno",
             title="UEDGE",
-            # colorbar=False,
+            colorbar=False,
         )
 
     # Plot the IRVB data
@@ -134,8 +140,8 @@ def plot_IRVB_comparison(
     pcm = ax[1].pcolormesh(r, z, irvb, cmap="inferno", norm=norm)
     # cax = fig.add_axes([0.91, 0.1, 0.03, 0.8])
     # cb = fig.colorbar(pcm, cax=cax)
-    cb = fig.colorbar(pcm, ax=ax[1])
-    cb.set_label("Wm$^{-3}$", labelpad=-10)
+    # cb = fig.colorbar(pcm, ax=ax[1])
+    # cb.set_label("Wm$^{-3}$", labelpad=-10)
     ax[1].set_xlabel("R [m]")
     ax[1].set_ylabel("Z [m]")
     ax[1].set_title("IRVB", fontsize=10, loc="left")
@@ -175,7 +181,11 @@ def plot_IRVB_comparison(
     else:
         c.plot.lcfs(ax=ax[1])
 
-    fig.tight_layout()
+    # fig.tight_layout()
+    fig.subplots_adjust(wspace=0.13, left=0.1, right=0.9)
+    cax = fig.add_axes([0.91, 0.2, 0.02, 0.65])
+    cb = fig.colorbar(pcm, cax=cax)
+    cb.set_label("Wm$^{-3}$", labelpad=-10)
 
     if savepath is not None:
         fig.savefig(savepath)
@@ -302,7 +312,7 @@ def plot_midplane_profiles(
 
     if r_sep is not None:
         ax[0].axvline(
-            x=r_sep + r_shift, label="UEDGE $r_{sep}$", linestyle="--", color="gray"
+            x=r_sep + r_shift, label="$R_{sep}$", linestyle="--", color="gray"
         )
         ax[1].axvline(x=r_sep + r_shift, linestyle="--", color="gray")
 
@@ -347,15 +357,26 @@ def plot_midplane_profiles(
     return ax
 
 
-def plotrad(**plotvar_kwargs):
+def plotrad(c=None,**plotvar_kwargs):
     """Plot impurity radiation"""
-    plotvar(
-        bbb.prad + bbb.pradhyd,
-        logscale=True,
-        vmin=10**4.5,
-        label="$P_{rad}$ [Wm$^{-3}$]",
-        **plotvar_kwargs,
-    )
+    if c is None:
+        plotvar(
+            bbb.prad + bbb.pradhyd,
+            logscale=True,
+            vmin=10**4.5,
+            label="$P_{rad}$ [Wm$^{-3}$]",
+            **plotvar_kwargs,
+        )
+    else:
+        plotvar(
+            c.get("prad") + c.get("pradhyd"),
+            rm=c.get("rm"),
+            zm=c.get("zm"),
+            logscale=True,
+            vmin=10**4.5,
+            label="$P_{rad}$ [Wm$^{-3}$]",
+            **plotvar_kwargs,
+        )
 
 
 def plot_divertor_qparallel():
@@ -552,7 +573,7 @@ def plot_radial_fluxes(
     fee_gradB = np.sum(
         electron_energy_upwind[ix_mask, :]
         * bbb.cfybf
-        * bbb.vycb[ix_mask, :, 0]
+        * -bbb.veycb[ix_mask, :]
         * com.sy[ix_mask, :],
         axis=0,
     )
@@ -568,11 +589,29 @@ def plot_radial_fluxes(
         ),
         axis=0,
     )
+    fei_diff_condonly = np.sum(
+        (
+            - (bbb.kyi_use[ix_mask, :] + bbb.kyi)
+            * bbb.gtiy[ix_mask, :]
+            * niy_upwind[ix_mask, :]
+            * com.sy[ix_mask, :]
+        ),
+        axis=0,
+    )
     fee_diff = np.sum(
         (
             electron_energy_upwind[ix_mask, :]
             * bbb.vydd[ix_mask, :, 0]
             * com.sy[ix_mask, :]
+            - (bbb.kye_use[ix_mask, :] + bbb.kye)
+            * bbb.gtey[ix_mask, :]
+            * ney_upwind[ix_mask, :]
+            * com.sy[ix_mask, :]
+        ),
+        axis=0,
+    )
+    fee_diff_condonly = np.sum(
+        (
             - (bbb.kye_use[ix_mask, :] + bbb.kye)
             * bbb.gtey[ix_mask, :]
             * ney_upwind[ix_mask, :]
@@ -609,24 +648,26 @@ def plot_radial_fluxes(
     # Plot
     fig, ax = plt.subplots(3, figsize=(5.5, 7.5), sharex=True)
 
-    ax[0].plot(com.yyc, tot_fni, label="UEDGE total", color="black")
-    ax[0].plot(com.yyc, tot_fni_diff, label=r"Diffusive", color="green")
-    ax[0].plot(com.yyc, tot_fni_gradB, label=r"$\nabla B$", color="blue")
-    ax[0].plot(com.yyc, tot_fni_ExB, label=r"$E \times B$", color="red")
+    # ax[0].plot(com.yyc, tot_fni / np.sum(com.sy[ix_mask, :]), label="UEDGE total", color="black")
+    ax[0].plot(com.yyc[1:-1], tot_fni[1:-1], label="UEDGE total", color="black")
+    ax[0].plot(com.yyc[1:-1], tot_fni_diff[1:-1], label=r"Diffusive", color="green")
+    ax[0].plot(com.yyc[1:-1], tot_fni_gradB[1:-1], label=r"$\nabla B$", color="blue")
+    ax[0].plot(com.yyc[1:-1], tot_fni_ExB[1:-1], label=r"$E \times B$", color="red")
     if show_sum:
         ax[0].plot(
-            com.yyc,
-            tot_fni_gradB + tot_fni_ExB + tot_fni_diff,
+            com.yyc[1:-1],
+            (tot_fni_gradB + tot_fni_ExB + tot_fni_diff)[1:-1],
             label="Sum",
             linestyle="--",
             color="gray",
         )
     ax[0].grid()
-    ax[0].set_ylabel(r"$\Gamma^{i}_{y}$ [s$^{-1}$]")
+    ax[0].set_ylabel(r"$\Gamma^{i}_{y} \times A_{sep}$ [s$^{-1}$]")
     ax[0].legend(loc=legend_loc)
 
     ax[1].plot(com.yyc, 1e-6 * tot_fei, label="UEDGE total", color="black")
     ax[1].plot(com.yyc, 1e-6 * fei_diff, label="Diffusive", color="green")
+    # ax[1].plot(com.yyc, 1e-6 * fei_diff_condonly, label="Diffusive (cond only)", color="green", linestyle="--")
     ax[1].plot(com.yyc, 1e-6 * fei_gradB, label=r"$\nabla B$", color="blue")
     ax[1].plot(com.yyc, 1e-6 * fei_ExB, label="ExB", color="red")
     if np.sum(abs(bbb.vyti_use) + abs(bbb.vy_use[:, :, 0])) > 0.0:
@@ -646,6 +687,7 @@ def plot_radial_fluxes(
 
     ax[2].plot(com.yyc, 1e-6 * tot_fee, label="UEDGE total", color="black")
     ax[2].plot(com.yyc, 1e-6 * fee_diff, label="Diffusive", color="green")
+    # ax[2].plot(com.yyc, 1e-6 * fee_diff_condonly, label="Diffusive (cond only)", color="green", linestyle="--")
     ax[2].plot(com.yyc, 1e-6 * fee_gradB, label=r"$\nabla B$", color="blue")
     ax[2].plot(com.yyc, 1e-6 * fee_ExB, label="ExB", color="red")
     ax[2].plot(com.yyc, 1e-6 * fee_cur, label="Current-driven", color="purple")
@@ -682,88 +724,89 @@ def plot_diff_coeffs():
     fig.tight_layout()
 
 
-def plot_q_plates(include_radiation=True, project=False):
+def plot_q_plates(include_radiation=True, project=False, c=None, ax=None, label=None, xaxis="r", colour=None):
     """Plot the total heat flux delivered to each target plate (snowflake geometry is assumed)"""
-    bbb.plateflux()
-    bbb.pradpltwl()
-    if include_radiation:
-        q_odata = (bbb.sdrrb + bbb.sdtrb).T
-        q_idata = (bbb.sdrlb + bbb.sdtlb).T
+
+    q, r = pp.get_q_plates(include_radiation=include_radiation, project=project, c=c, xaxis=xaxis)
+    
+    if c is None:
+        nxpt = com.nxpt 
     else:
-        q_odata = (bbb.sdtrb).T
-        q_idata = (bbb.sdtlb).T
-    if com.nxpt == 1:
-        if project:
-            rrf = pp.getrrf()
-            q1 = q_odata[0] / rrf[com.ixrb[0] + 1, :]
-            q2 = q_idata[0] / rrf[com.ixlb[0], :]
+        nxpt = c.get("nxpt")
+
+    if nxpt == 1:
+
+        r1 = r[0]
+        r2 = r[1]
+        q1 = q[0]
+        q2 = q[1]
+
+        if ax is None:
+            fig, ax = plt.subplots(2, 1)
+            axes_provided = False
         else:
-            q1 = q_odata[0]
-            q2 = q_idata[0]
-        r1 = com.yyrb.T[0]
-        r2 = com.yylb.T[0]
+            axes_provided = True
 
-        fig, ax = plt.subplots(2, 1)
+        (c,) = ax[0].plot(r1, q1 / 1e6, label=label)
+        ax[1].plot(r2, q2 / 1e6)
 
-        (c,) = ax[0].plot(r1, q1 / 1e6, label="SP1 (outer)")
-        ax[1].plot(r2, q2 / 1e6, label="SP2 (inner)")
-
-        [ax[i].grid() for i in range(2)]
+        [ax[i].grid(True) for i in range(2)]
         [ax[i].legend(loc="upper right") for i in range(2)]
         ax[1].set_ylabel("Heat flux [MWm$^{-2}$]")
-        ax[-1].set_xlabel("Distance along target plate [m]")
-        fig.tight_layout()
+        if xaxis=="r":
+            ax[-1].set_xlabel("Distance along target plate [m]")
+        elif "psi" in xaxis:
+            ax[-1].set_xlabel("$\psi_n$")
+        # [ax[i].set_xlabel("SP{i}: distance along plate [m]".format(i+1)) for i in range(2)]
+        # fig.tight_layout()
 
-    elif com.nxpt == 2:
-        if project:
-            rrf = pp.getrrf()
-            q1 = q_odata[0] / rrf[com.ixrb[0] + 1, :]
-            q2 = q_idata[1] / rrf[com.ixlb[1] + 1, :]
-            q3 = q_odata[1] / rrf[com.ixrb[1], :]
-            q4 = q_idata[0] / rrf[com.ixrb[0], :]
-        else:
-            q1 = q_odata[0]
-            q2 = q_idata[1]
-            q3 = q_odata[1]
-            q4 = q_idata[0]
-        r1 = com.yyrb.T[0]
-        r2 = com.yylb.T[1]
-        r3 = com.yyrb.T[1]
-        r4 = com.yylb.T[0]
+    elif nxpt == 2:
+
+        r1 = r[0]
+        r2 = r[1]
+        r3 = r[2]
+        r4 = r[3]
+        q1 = q[0]
+        q2 = q[1]
+        q3 = q[2]
+        q4 = q[3]
 
         P1, P2, P3, P4 = pp.get_Q_plates(
-            include_radiation=include_radiation
+            include_radiation=include_radiation, c=c
         )
         Ptot = P1 + P2 + P3 + P4
 
-        print("Power delivered to each target plate: ")
-        print(
-            "SP1: {:.1f}".format(100 * P1 / Ptot)
-            + "%, "
-            + "SP2: {:.1f}".format(100 * P2 / Ptot)
-            + "%, "
-            + "SP3: {:.1f}".format(100 * P3 / Ptot)
-            + "%, "
-            + "SP4: {:.1f}".format(100 * P4 / Ptot)
-            + "%, "
-        )
+        if ax is None:
+            fig, ax = plt.subplots(4, 1, sharex=True)
+            axes_provided = False
+        else:
+            axes_provided = True
 
-        fig, ax = plt.subplots(4, 1)
+        (c,) = ax[0].plot(r1, q1 / 1e6, label=label, color=colour)
+        ax[1].plot(r2, q2 / 1e6, color=colour)
+        ax[2].plot(r3, q3 / 1e6, color=colour)
+        ax[3].plot(r4, q4 / 1e6, color=colour)
 
-        (c,) = ax[0].plot(r1, q1 / 1e6, label="SP1")
-        ax[1].plot(r2, q2 / 1e6, label="SP2")
-        ax[2].plot(r3, q3 / 1e6, label="SP3")
-        ax[3].plot(r4, q4 / 1e6, label="SP4")
-
-        [ax[i].grid() for i in range(4)]
-        [ax[i].legend(loc="upper right") for i in range(4)]
+        [ax[i].grid(True) for i in range(4)]
+        # [ax[i].legend(loc="upper right") for i in range(4)]
+        ax[0].legend(loc="upper right")
         # ax[1].set_ylabel("Heat flux [MWm$^{-2}$]")
         if project:
             ax[1].set_ylabel(r"$q_{\perp}$ [MWm$^{-2}$]")
         else:
             ax[1].set_ylabel(r"$q_{\parallel}$ [MWm$^{-2}$]")
-        ax[-1].set_xlabel("Distance along target plate [m]")
-        fig.tight_layout()
+        if xaxis=="r":
+            ax[-1].set_xlabel("Distance along target plate [m]")
+        elif "psi" in xaxis:
+            ax[-1].set_xlabel("$\psi_n$")
+        # [ax[i].set_xlabel("SP{}: distance along plate [m]".format(i+1)) for i in range(4)]
+        [ax[i].set_title("SP{}".format(i+1), x=0.05, y=0.2, fontsize=10) for i in range(4)]
+        # fig.tight_layout()
+
+    # ax[0].get_figure().tight_layout()
+    ax[0].get_figure().subplots_adjust(hspace=0.05)
+
+    return ax
 
 
 def comparemesh(
@@ -1156,14 +1199,18 @@ def animatevar(
         valstep=1,
     )
 
-    vals = np.zeros((com.nx+2)*(com.ny+2))
+    nx = var.shape[0]-2
+    ny = var.shape[1]-2
+
+    vals = np.zeros((nx+2)*(ny+2))
     def update_surf1(val):
         p[0].remove()
-        for iy in np.arange(0, com.ny + 2):
-            for ix in np.arange(0, com.nx + 2):
-                k = ix + (com.nx + 2) * iy
+        for iy in np.arange(0, ny + 2):
+            for ix in np.arange(0, nx + 2):
+                k = ix + (nx + 2) * iy
                 vals[k] = var[ix, iy, int(val)]
         p[0].set_array(np.array(vals))
+        print(vals)
         ax.add_collection(p[0])
 
         return p
@@ -1829,7 +1876,9 @@ def plotpprof(
     subtitle=None,
     remove_ghosts=True,
     c: uetools.Case | None = None,
-    ix_seed: int = 0
+    ix_seed: int = 0,
+    axvlines = [],
+    show_mesh: bool = True
 ):
     """_summary_
 
@@ -1841,41 +1890,54 @@ def plotpprof(
     :param logy: _description_, defaults to False
     :param subtitle: _description_, defaults to None
     """
-    posx, x, fv = pp.get_flux_tube(var, iy, ix_seed=ix_seed, xaxis=xaxis, c=c)
-
-    # Retrieve grid variables
-    if c is None:
-        nx = com.nx
-        ny = com.ny
+    if show_mesh:
+        fig, ax = plt.subplots(ncols=2, width_ratios=[1, 2])
+        plotvar(v, cmap="gray_r", mesh=True, ax=ax[0], c=c)
     else:
-        nx = c.get("nx")
-        ny = c.get("ny")
+        fig, ax = plt.subplots(ncols=1)
+        ax = [None,ax]
 
-    v = np.zeros([nx + 2, ny + 2])
-    for ix in range(len(posx)):
-        v[posx[ix], iy] = 1 + ix / len(posx)
-
-    if xaxis == "par":
-        xlabel = r"$s_{\parallel}$ [m]"
-    elif xaxis == "pol":
-        xlabel = r"$s_{\theta}$ [m]"
-    elif xaxis == "index":
-        xlabel = "poloidal index"
-    fig, ax = plt.subplots(ncols=2, width_ratios=[1, 2])
-    plotvar(v, cmap="gray_r", mesh=True, ax=ax[0], c=c)
-    if remove_ghosts:
-        ax[1].plot(x[1:-1], fv[1:-1])
+    if isinstance(var,np.ndarray):
+        vars = [var]
     else:
-        ax[1].plot(x, fv)
-    ax[1].grid()
-    ax[1].set_xlabel(xlabel)
-    if logy:
-        ax[1].set_yscale("log")
+        vars = var 
+    for var in vars:
+        posx, x, fv = pp.get_flux_tube(var, iy, ix_seed=ix_seed, xaxis=xaxis, c=c)
 
-    if logx:
-        ax[1].set_xscale("log")
-    ax[1].set_title(subtitle, loc="right")
+        # Retrieve grid variables
+        if c is None:
+            nx = com.nx
+            ny = com.ny
+        else:
+            nx = c.get("nx")
+            ny = c.get("ny")
+
+        v = np.zeros([nx + 2, ny + 2])
+        for ix in range(len(posx)):
+            v[posx[ix], iy] = 1 + ix / len(posx)
+
+        if xaxis == "par":
+            xlabel = r"$s_{\parallel}$ [m]"
+        elif xaxis == "pol":
+            xlabel = r"$s_{pol}$ [m]"
+        elif xaxis == "index":
+            xlabel = "poloidal index"
+        if remove_ghosts:
+            ax[1].plot(x[1:-1], fv[1:-1])
+        else:
+            ax[1].plot(x, fv)
+        ax[1].grid(True)
+        ax[1].set_xlabel(xlabel)
+        if logy:
+            ax[1].set_yscale("log")
+
+        if logx:
+            ax[1].set_xscale("log")
+        ax[1].set_title(subtitle, loc="left")
+        for ix in axvlines:
+            ax[1].axvline(x[ix], linestyle="--", color="gray")
     fig.tight_layout()
+    return ax
 
 
 def plot_q_exp_fit(
