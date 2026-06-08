@@ -80,22 +80,23 @@ class Grid:
         grid_vars = []
         for i in range(len(breaks)-1):
             var_lines = lines[breaks[i] : breaks[i + 1]]
-            var_data = np.array(
-                [
-                    float(v.replace("D", "e"))
-                    for l in var_lines
-                    for v in l.strip("\n").split()
-                ]
-            )
-            var_array = np.zeros((self.nx + 2, self.ny + 2, len(self.locs)))
-            i_count = 0
-            for iloc in range(len(self.locs)):
-                for iy in range(self.ny + 2):
-                    for ix in range(self.nx + 2):
-                        var_array[ix, iy, iloc] = var_data[i_count]
-                        i_count += 1
+            if len(var_lines) > 1:
+                var_data = np.array(
+                    [
+                        float(v.replace("D", "e"))
+                        for l in var_lines
+                        for v in l.strip("\n").split()
+                    ]
+                )
+                var_array = np.zeros((self.nx + 2, self.ny + 2, len(self.locs)))
+                i_count = 0
+                for iloc in range(len(self.locs)):
+                    for iy in range(self.ny + 2):
+                        for ix in range(self.nx + 2):
+                            var_array[ix, iy, iloc] = var_data[i_count]
+                            i_count += 1
 
-            grid_vars.append(var_array)
+                grid_vars.append(var_array)
 
         # Save grid vars
         self.r = grid_vars[0]
@@ -437,7 +438,8 @@ def interpolate_var_overlaps(
                 ix1 = ol[0]
                 iy1 = ol[1]
                 z_new[ix2, iy2] += uevar[ix1][iy1] * ol[-1]
-            total_area = np.sum(ol[-1] for ol in ols)
+            # total_area = np.sum(ol[-1] for ol in ols)
+            total_area = np.sum([ol[-1] for ol in ols])
             if total_area > 0:
                 z_new[ix2, iy2] = z_new[ix2, iy2] / total_area
             else:

@@ -13,6 +13,7 @@ import matplotlib
 from matplotlib.collections import PatchCollection
 from matplotlib.widgets import Slider
 import numpy as np
+from matplotlib import animation
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 
@@ -68,7 +69,8 @@ def plot_IRVB_comparison(
     vmax=None,
     vmin=10**4.5,
     c: uetools.Case | None = None,
-    pass_num = "first_pass"
+    pass_num = "first_pass",
+    logscale:bool=True
 ):
     if c is None:
         if xlim is None:
@@ -94,8 +96,9 @@ def plot_IRVB_comparison(
     z = b[pass_num][()]["inverted_dict"]
     grid_resolution = 2
     t = z[str(grid_resolution)]["time_full_binned_crop"]
-    tidx = np.where(t >= timestamp_ms / 1000)
-    troi = tidx[0][0]
+    # tidx = np.where(t >= timestamp_ms / 1000)
+    tidx = np.argmin(abs(t - timestamp_ms/1000))
+    troi = tidx
     
     d = z[str(grid_resolution)]["inverted_data"]
     r = z[str(grid_resolution)]["geometry"]["R"]
@@ -117,7 +120,7 @@ def plot_IRVB_comparison(
         plotvar(
             (bbb.prad+bbb.pradhyd),
             ax=ax[0],
-            logscale=True,
+            logscale=logscale,
             vmin=vmin,
             vmax=vmax,
             subtitle="UEDGE",
@@ -128,7 +131,7 @@ def plot_IRVB_comparison(
         c.plot.mesh(
             c.get("prad") + c.get("pradhyd"),
             ax=ax[0],
-            log=True,
+            log=logscale,
             zrange=(vmin, vmax),
             cmap="inferno",
             title="UEDGE",
@@ -136,7 +139,10 @@ def plot_IRVB_comparison(
         )
 
     # Plot the IRVB data
-    norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
+    if logscale:
+        norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
+    else:
+        norm = matplotlib.colors.Normalize(vmin=vmin,vmax=vmax)
     pcm = ax[1].pcolormesh(r, z, irvb, cmap="inferno", norm=norm)
     # cax = fig.add_axes([0.91, 0.1, 0.03, 0.8])
     # cb = fig.colorbar(pcm, cax=cax)
@@ -646,10 +652,10 @@ def plot_radial_fluxes(
     )
 
     # Plot
-    fig, ax = plt.subplots(3, figsize=(5.5, 7.5), sharex=True)
+    fig, ax = plt.subplots(3, figsize=(6.5, 6.5), sharex=True)
 
     # ax[0].plot(com.yyc, tot_fni / np.sum(com.sy[ix_mask, :]), label="UEDGE total", color="black")
-    ax[0].plot(com.yyc[1:-1], tot_fni[1:-1], label="UEDGE total", color="black")
+    ax[0].plot(com.yyc[1:-1], tot_fni[1:-1], label="Total", color="black")
     ax[0].plot(com.yyc[1:-1], tot_fni_diff[1:-1], label=r"Diffusive", color="green")
     ax[0].plot(com.yyc[1:-1], tot_fni_gradB[1:-1], label=r"$\nabla B$", color="blue")
     ax[0].plot(com.yyc[1:-1], tot_fni_ExB[1:-1], label=r"$E \times B$", color="red")
@@ -662,14 +668,14 @@ def plot_radial_fluxes(
             color="gray",
         )
     ax[0].grid()
-    ax[0].set_ylabel(r"$\Gamma^{i}_{y} \times A_{sep}$ [s$^{-1}$]")
+    ax[0].set_ylabel(r"$\int \Gamma^{i}_{r} d\theta$ [s$^{-1}$]")
     ax[0].legend(loc=legend_loc)
 
-    ax[1].plot(com.yyc, 1e-6 * tot_fei, label="UEDGE total", color="black")
+    ax[1].plot(com.yyc, 1e-6 * tot_fei, label="Total", color="black")
     ax[1].plot(com.yyc, 1e-6 * fei_diff, label="Diffusive", color="green")
     # ax[1].plot(com.yyc, 1e-6 * fei_diff_condonly, label="Diffusive (cond only)", color="green", linestyle="--")
     ax[1].plot(com.yyc, 1e-6 * fei_gradB, label=r"$\nabla B$", color="blue")
-    ax[1].plot(com.yyc, 1e-6 * fei_ExB, label="ExB", color="red")
+    ax[1].plot(com.yyc, 1e-6 * fei_ExB, label=r"$E \times B$", color="red")
     if np.sum(abs(bbb.vyti_use) + abs(bbb.vy_use[:, :, 0])) > 0.0:
         ax[1].plot(com.yyc, 1e-6 * fei_pinch, label="Pinch", color="darkorange")
     if show_sum:
@@ -680,16 +686,16 @@ def plot_radial_fluxes(
             color="gray",
             linestyle="--",
         )
-    ax[1].set_ylabel(r"$q^{i}_{y}$ [MW]")
+    ax[1].set_ylabel(r"$\int q^{i}_{r} d\theta$ [MW]")
     ax[1].set_xlabel("$r - r_{sep}$")
     ax[1].grid()
     ax[1].legend(loc=legend_loc)
 
-    ax[2].plot(com.yyc, 1e-6 * tot_fee, label="UEDGE total", color="black")
+    ax[2].plot(com.yyc, 1e-6 * tot_fee, label="Total", color="black")
     ax[2].plot(com.yyc, 1e-6 * fee_diff, label="Diffusive", color="green")
     # ax[2].plot(com.yyc, 1e-6 * fee_diff_condonly, label="Diffusive (cond only)", color="green", linestyle="--")
     ax[2].plot(com.yyc, 1e-6 * fee_gradB, label=r"$\nabla B$", color="blue")
-    ax[2].plot(com.yyc, 1e-6 * fee_ExB, label="ExB", color="red")
+    ax[2].plot(com.yyc, 1e-6 * fee_ExB, label=r"$E \times B$", color="red")
     ax[2].plot(com.yyc, 1e-6 * fee_cur, label="Current-driven", color="purple")
     if np.sum(abs(bbb.vyte_use) + abs(bbb.vy_use[:, :, 0])) > 0.0:
         ax[2].plot(com.yyc, 1e-6 * fee_pinch, label="Pinch", color="darkorange")
@@ -701,12 +707,14 @@ def plot_radial_fluxes(
             color="gray",
             linestyle="--",
         )
-    ax[2].set_ylabel(r"$q^{e}_{y}$ [MW]")
+    ax[2].set_ylabel(r"$\int q^{e}_{r} d\theta$ [MW]")
     ax[2].set_xlabel("$r - r_{sep}$")
     ax[2].grid()
     ax[2].legend(loc=legend_loc)
 
-    fig.subplots_adjust(hspace=0.05, left=0.15)
+    fig.subplots_adjust(hspace=0.05, left=0.15,right=0.99)
+
+    return fig
 
 
 def plot_diff_coeffs():
@@ -792,9 +800,9 @@ def plot_q_plates(include_radiation=True, project=False, c=None, ax=None, label=
         ax[0].legend(loc="upper right")
         # ax[1].set_ylabel("Heat flux [MWm$^{-2}$]")
         if project:
-            ax[1].set_ylabel(r"$q_{\perp}$ [MWm$^{-2}$]")
-        else:
             ax[1].set_ylabel(r"$q_{\parallel}$ [MWm$^{-2}$]")
+        else:
+            ax[1].set_ylabel(r"$q_{\perp}$ [MWm$^{-2}$]")
         if xaxis=="r":
             ax[-1].set_xlabel("Distance along target plate [m]")
         elif "psi" in xaxis:
@@ -1107,6 +1115,7 @@ def animatevar(
     # logscale: bool = False,
     # xlim: tuple = (None, None),
     # ylim: tuple = (None, None),
+    savepath: str | None = None,
     **kwargs
 ):
     """Animate a variable on the UEDGE mesh. Variable must have same dimensions as grid, plus a timestep dimension (assumed to be the last dimension in the array).
@@ -1189,16 +1198,6 @@ def animatevar(
 
     plt.colorbar(p[0])
 
-    axsurf1 = fig.add_axes([0.15, 0.05, 0.6, 0.03])
-    surf1_slider = Slider(
-        ax=axsurf1,
-        label=r"Timestep",
-        valmin=0,
-        valmax=var.shape[-1] - 1,
-        valinit=0,
-        valstep=1,
-    )
-
     nx = var.shape[0]-2
     ny = var.shape[1]-2
 
@@ -1210,12 +1209,34 @@ def animatevar(
                 k = ix + (nx + 2) * iy
                 vals[k] = var[ix, iy, int(val)]
         p[0].set_array(np.array(vals))
-        print(vals)
         ax.add_collection(p[0])
+        ax.set_title("timestep = " + str(val))
 
         return p
 
-    surf1_slider.on_changed(update_surf1)
+    if savepath is not None:
+        anim = animation.FuncAnimation(
+            fig,
+            update_surf1,
+            frames=var.shape[-1] - 1,
+        )
+        anim.save(savepath, fps=20)
+        plt.show()
+        return anim
+
+    else:
+        axsurf1 = fig.add_axes([0.15, 0.05, 0.6, 0.03])
+        surf1_slider = Slider(
+            ax=axsurf1,
+            label=r"Timestep",
+            valmin=0,
+            valmax=var.shape[-1] - 1,
+            valinit=0,
+            valstep=1,
+        )
+
+        surf1_slider.on_changed(update_surf1)
+
 
     return surf1_slider
 
@@ -1892,7 +1913,6 @@ def plotpprof(
     """
     if show_mesh:
         fig, ax = plt.subplots(ncols=2, width_ratios=[1, 2])
-        plotvar(v, cmap="gray_r", mesh=True, ax=ax[0], c=c)
     else:
         fig, ax = plt.subplots(ncols=1)
         ax = [None,ax]
@@ -1914,7 +1934,10 @@ def plotpprof(
 
         v = np.zeros([nx + 2, ny + 2])
         for ix in range(len(posx)):
-            v[posx[ix], iy] = 1 + ix / len(posx)
+            # v[posx[ix], iy] = 1 + ix / len(posx)
+            v[posx[ix], iy] = 1
+        if show_mesh:
+            plotvar(v, cmap="gray_r", mesh=True, ax=ax[0], c=c)
 
         if xaxis == "par":
             xlabel = r"$s_{\parallel}$ [m]"
